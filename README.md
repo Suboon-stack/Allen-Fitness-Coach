@@ -4,7 +4,7 @@ An AI-powered fitness companion built with Flutter and Google Gemini that acts a
 
 > 🏆 Built at the **Rangsit University Hackathon (Early 2026)** — theme: *NLP models that improve human lives* — and **selected as a finalist**.
 
-![Allen screenshot](flutter_01.png)
+![Allen — AI Fitness Coach](docs/screenshots/welcome.png)
 
 ## The Problem
 
@@ -16,9 +16,42 @@ Fitness and nutrition guidance is usually generic, manual, and spread across sev
 - **Workout Generator** — pick muscle group, difficulty, and duration for a tailored plan.
 - **Meal Planner** — goal, diet preference, and calorie target produce a full day of meals.
 - **Calorie Scanner** — snap a food photo; Gemini Vision estimates calories and macros.
-- **Progress Tracking** — log weight, workout count, and streaks with charts.
+- **Meal & Water Tracking** — log meals against your daily calorie target and track water intake toward a hydration goal.
+- **Progress Tracking** — dashboard overview plus weight trends, workout stats, and full workout history with charts.
 - **Profile & BMI** — personal details, automatic BMI, and daily macro targets.
 - **Auth** — email/password sign-up, login, session restore, password reset, and account deletion via Firebase.
+
+## Screenshots
+
+### Onboarding & Auth
+
+| Sign in | Sign up |
+| --- | --- |
+| ![Sign in](docs/screenshots/login.png) | ![Sign up](docs/screenshots/registration.png) |
+
+### Core experience
+
+| Home | AI Coach | Workout generator |
+| --- | --- | --- |
+| ![Home](docs/screenshots/home.png) | ![AI Coach](docs/screenshots/ai-chat.png) | ![Workout generator](docs/screenshots/workout-generator.png) |
+
+### Meal & food
+
+| Meal planner | Calorie scanner | Meal tracker |
+| --- | --- | --- |
+| ![Meal planner](docs/screenshots/meal-planner.png) | ![Calorie scanner](docs/screenshots/calorie-scanner.png) | ![Meal tracker](docs/screenshots/meal-tracker.png) |
+
+### Tracking
+
+| Water tracker | Progress overview | Weight progress |
+| --- | --- | --- |
+| ![Water tracker](docs/screenshots/water-tracker.png) | ![Progress overview](docs/screenshots/progress-overview.png) | ![Weight progress](docs/screenshots/weight-progress.png) |
+
+### Progress & profile
+
+| Workout stats | Workout history | Profile & BMI |
+| --- | --- | --- |
+| ![Workout stats](docs/screenshots/workout-stats.png) | ![Workout history](docs/screenshots/workout-history.png) | ![Profile & BMI](docs/screenshots/profile-bmi.png) |
 
 ## Hackathon Alignment
 
