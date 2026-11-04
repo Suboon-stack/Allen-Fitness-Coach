@@ -4,16 +4,20 @@ import 'dart:io';
 
 import 'package:allen/secrets.dart';
 import 'package:allen/fitness/services/workout_plan_parser.dart';
+import 'package:allen/fitness/services/meal_plan_parser.dart';
 import 'package:http/http.dart' as http;
 
 class AiService {
   AiService(
       {http.Client? client,
-      Duration workoutTimeout = const Duration(seconds: 30)})
+      Duration workoutTimeout = const Duration(seconds: 30),
+      Duration mealTimeout = const Duration(seconds: 30)})
       : _client = client,
-        _workoutTimeout = workoutTimeout;
+        _workoutTimeout = workoutTimeout,
+        _mealTimeout = mealTimeout;
   final http.Client? _client;
   final Duration _workoutTimeout;
+  final Duration _mealTimeout;
   final List<Map<String, dynamic>> _chatHistory = [];
 
   // System prompt — makes Gemini act as fitness coach
@@ -92,46 +96,17 @@ Push Ups | 3 x 15 | Chest
     required String diet,
     required int calories,
   }) async {
-    try {
-      final prompt = '''
+    final prompt = """
 Create a daily meal plan for someone who wants to $goal.
 Diet preference: $diet
 Target calories: $calories kcal
-
-Format your response EXACTLY like this:
-MEAL_TIME | MEAL_NAME | CALORIES | PROTEIN
-MEAL_TIME | MEAL_NAME | CALORIES | PROTEIN
-(list breakfast, lunch, dinner, snack)
-
-Example:
-Breakfast | Oatmeal + Banana | 380 kcal | 12g protein
-Lunch | Grilled Chicken + Rice | 620 kcal | 45g protein
-''';
-      final result = await _callGemini(prompt, useHistory: false);
-
-      if (result.contains('quota') ||
-          result.contains('rate limit') ||
-          result.contains('429') ||
-          result.contains('Error:')) {
-        return _getFallbackMealPlan(goal, calories);
-      }
-
-      return result;
-    } catch (e) {
-      return _getFallbackMealPlan(goal, calories);
-    }
-  }
-
-  String _getFallbackMealPlan(String goal, int calories) {
-    final mealPlan = {
-      'Lose Weight':
-          'Breakfast | Oatmeal + Berries | 300 kcal | 10g protein\nLunch | Grilled Chicken Salad | 400 kcal | 35g protein\nSnack | Apple + Almonds | 150 kcal | 5g protein\nDinner | Baked Salmon + Vegetables | 450 kcal | 30g protein',
-      'Gain Muscle':
-          'Breakfast | Eggs + Toast + Banana | 500 kcal | 25g protein\nLunch | Chicken + Rice + Avocado | 650 kcal | 45g protein\nSnack | Protein Shake + Peanut Butter | 300 kcal | 30g protein\nDinner | Steak + Potatoes + Broccoli | 700 kcal | 50g protein',
-      'Maintain':
-          'Breakfast | Greek Yogurt + Granola | 350 kcal | 20g protein\nLunch | Turkey Wrap + Veggies | 450 kcal | 30g protein\nSnack | Mixed Nuts | 200 kcal | 8g protein\nDinner | Grilled Fish + Quinoa | 500 kcal | 35g protein',
-    };
-    return mealPlan[goal] ?? mealPlan['Maintain']!;
+Return breakfast, lunch, dinner and snack, one per line, without introductory text.
+Use exactly six pipe-separated fields:
+MEAL_TIME | MEAL_NAME | CALORIES | PROTEIN | CARBS | FAT
+Calories must be a positive integer in kcal. Macros must be nonnegative grams.
+Nutrition values are estimates. Do not claim medical or personalized dietary advice.
+""";
+    return _callGemini(prompt, useHistory: false, strictMeal: true);
   }
 
   // ── Generate daily quote ──────────────────────────────────────
@@ -173,7 +148,14 @@ Lunch | Grilled Chicken + Rice | 620 kcal | 45g protein
 
   // ── Internal Gemini call ──────────────────────────────────────
   Future<String> _callGemini(String prompt,
-      {bool useHistory = true, bool strictWorkout = false}) async {
+      {bool useHistory = true,
+      bool strictWorkout = false,
+      bool strictMeal = false}) async {
+    final strict = strictWorkout || strictMeal;
+    final kind = strictMeal ? 'meal plan' : 'workout';
+    Exception failure(String message) => strictMeal
+        ? MealGenerationException(message)
+        : WorkoutGenerationException(message);
     if (prompt.trim().isEmpty) return 'Please enter a message.';
 
     const model = 'gemini-2.5-flash-lite';
@@ -204,14 +186,14 @@ Lunch | Grilled Chicken + Rice | 620 kcal | 45g protein
         headers: {'Content-Type': 'application/json'},
         body: jsonEncode({'contents': contents}),
       );
-      final res = strictWorkout
-          ? await request.timeout(_workoutTimeout)
+      final res = strict
+          ? await request.timeout(strictMeal ? _mealTimeout : _workoutTimeout)
           : await request;
 
       if (res.statusCode == 200) {
         final data = jsonDecode(res.body);
-        final text = strictWorkout
-            ? _workoutText(data)
+        final text = strict
+            ? _planText(data, kind: kind, failure: failure)
             : data['candidates'][0]['content']['parts'][0]['text'] as String;
 
         if (useHistory) {
@@ -231,36 +213,38 @@ Lunch | Grilled Chicken + Rice | 620 kcal | 45g protein
 
         return text.trim();
       } else {
-        if (strictWorkout) {
+        if (strict) {
           if (res.statusCode == 429) {
-            throw const WorkoutGenerationException(
-                'Allen’s workout request limit has been reached. Please try again later.');
+            throw failure(
+                'Allen’s $kind request limit has been reached. Please try again later.');
           }
-          throw const WorkoutGenerationException(
-              'Workout generation is unavailable right now. Please try again shortly.');
+          throw failure(
+              'Allen’s $kind generation is unavailable right now. Please try again shortly.');
         }
         final error = jsonDecode(res.body);
         return 'Error: ${error['error']['message'] ?? 'Something went wrong'}';
       }
     } catch (e) {
-      if (strictWorkout) {
-        if (e is WorkoutGenerationException) rethrow;
+      if (strict) {
+        if (e is WorkoutGenerationException || e is MealGenerationException) {
+          rethrow;
+        }
         if (e is TimeoutException) {
-          throw const WorkoutGenerationException(
-              'Allen took too long to respond. Please try again.');
+          throw failure('Allen took too long to respond. Please try again.');
         }
         if (e is FormatException) {
-          throw const WorkoutGenerationException(
+          throw failure(
               'Allen returned an unreadable response. Please try again.');
         }
-        throw const WorkoutGenerationException(
+        throw failure(
             'Couldn’t reach Allen. Check your connection and try again.');
       }
       return 'Error: ${e.toString()}';
     }
   }
 
-  String _workoutText(dynamic data) {
+  String _planText(dynamic data,
+      {required String kind, required Exception Function(String) failure}) {
     if (data is Map &&
         data['candidates'] is List &&
         (data['candidates'] as List).isNotEmpty) {
@@ -268,8 +252,7 @@ Lunch | Grilled Chicken + Rice | 620 kcal | 45g protein
       if (candidate is Map &&
           candidate['finishReason'] != null &&
           candidate['finishReason'] != 'STOP') {
-        throw const WorkoutGenerationException(
-            'Allen couldn’t finish this workout. Please try again.');
+        throw failure('Allen couldn’t finish this $kind. Please try again.');
       }
       if (candidate is Map && candidate['content'] is Map) {
         final parts = candidate['content']['parts'];
@@ -284,8 +267,8 @@ Lunch | Grilled Chicken + Rice | 620 kcal | 45g protein
         }
       }
     }
-    throw const WorkoutGenerationException(
-        'Allen could not return a workout for this request. Try again or choose another focus.');
+    throw failure(
+        'Allen could not return a $kind for this request. Try again or change your preferences.');
   }
 
   void clearHistory() {

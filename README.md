@@ -8,7 +8,7 @@ Allen is a Flutter fitness application that brings workout planning, nutrition t
 
 Allen helps users plan and save workouts, track activity and weight, generate meal plans, estimate nutrition from food photos, and ask an AI fitness coach questions. Firebase handles authentication; fitness records currently persist locally on the device.
 
-The owner has reviewed and approved the latest Midnight Navy + Electric Blue UI on an Android phone, including the refined Welcome screen. UI approval does not establish complete live-service or persistence verification.
+The owner reviewed and approved the previous Midnight Navy + Electric Blue milestone on an Android phone, including the refined Welcome screen. The Nutrition Planner and circular Nutrition/Water trackers are now also owner-approved for this redesign-branch milestone. UI approval does not establish complete live-service or persistence verification.
 
 ## Tech Stack
 
@@ -33,7 +33,7 @@ Cloud Firestore is a dependency and appears in model serializers; current fitnes
 | Home Dashboard | Compact activity summaries, feature shortcuts, coach entry, bottom navigation, refresh and recovery states. UI approved on Android; summaries use existing repositories. |
 | Workout Planner | Focus, difficulty and duration preferences; Gemini generation; compact exercise details; save and completion actions. Explicit generation failures and retry replace silent workout fallbacks. |
 | Saved Workouts | Ready/completed filters, expandable details, completion, and confirmed deletion. UUID, duplicate-action and persistence-failure regression tests; full device/restart verification remains pending. |
-| Nutrition | Meal generation, meal logging, nutrition summaries, and water logging are implemented. Redesign and reliability verification are upcoming. |
+| Nutrition | Meal generation, logging, summaries, and water tracking are implemented. Planner and circular Nutrition/Water trackers are redesigned and owner-approved. Meal logging validates values; water uses the labeled app default and confirmed daily totals. |
 | Food analysis | Camera/gallery selection and Gemini nutrition estimates are implemented. Error/result handling needs improvement. |
 | AI Coach | Gemini conversation and in-session history are implemented. Interface and error handling improvements are upcoming. |
 | Progress | Weight logging, charts, and activity summaries are implemented. Weight deletion and account data separation have known limitations. |
@@ -49,7 +49,7 @@ Cloud Firestore is a dependency and appears in model serializers; current fitnes
 - [x] **Home Dashboard** — redesigned; compact layout, two-column statistics, and navigation retained.
 - [x] **Workout Planner** — redesigned; generation, saving, completion, and failure handling have automated coverage.
 - [x] **Saved Workouts** — redesigned, pending full functionality verification on device.
-- [ ] **Nutrition** — upcoming.
+- [x] **Nutrition** — Planner, circular Tracker/Water, and validated meal logging redesigned and owner-approved; remaining device/live-service verification is tracked separately.
 - [ ] **AI Coach** — upcoming.
 - [ ] **Progress** — upcoming.
 - [ ] **Profile and Settings** — upcoming.
@@ -57,6 +57,26 @@ Cloud Firestore is a dependency and appears in model serializers; current fitnes
 Checked entries indicate implemented, owner-approved UI rather than completion of the entire feature. Reviewed screens share a centralized Midnight Navy + Electric Blue Material 3 design system. Other routes retain their earlier styling until their own milestone.
 
 See the [design system](docs/ui-ux/midnight-theme.md), [workout repair notes](docs/ui-ux/workout-repairs.md), and [UI/UX documentation index](docs/ui-ux/README.md). Design decisions are based on the owner brief and code inspection; no user research or usability-study results are claimed.
+
+## Nutrition & Meal Planning
+
+Nutrition has three tabs that share the Midnight Material 3 design system:
+
+| Tab | What it does |
+| --- | --- |
+| **Tracker** | Shows today's recorded calories in an apple-centered progress ring, compact protein/carbohydrate/fat totals, and the actual meal list. Percentages appear only for valid saved goals belonging to the signed-in account. |
+| **Planner** | Generates Gemini meal suggestions from existing goal, diet, and calorie preferences. Shows readable results, loading and retry states; retains the previous valid plan when regeneration fails. Errors never silently become canned meals. |
+| **Water** | Shows today's saved milliliters in a matching drop-centered ring, with +100/+250/+500 ml actions. The 2,000 ml goal is clearly labeled as an app default, not a personalized recommendation. Home reads the same water total. |
+
+**Logging meals:** Add Meal opens a keyboard-safe sheet for meal type, name, calories, protein, carbohydrates, and fat. Values are validated before saving. AI suggestions have a separate review-and-log action: generating a plan does not count it as food eaten. Missing AI macros require confirmation rather than invented values. Duplicate taps are guarded; confirmed meals refresh the totals immediately.
+
+**Saving and the daily boundary:** Meals are saved locally with their date and nutrition values. Water is saved as one total per date. At local midnight the trackers switch to the new day's records; yesterday's records are retained. Refresh reloads today's saved data and goals without adding or deleting entries. Unsaved AI suggestions remain in memory and are not a saved meal-plan archive.
+
+**Reliability:** Stable meal UUIDs, serialized mutations, native-write confirmation, and cache recovery protect against duplicate saves and lost water increments. Tests cover malformed AI output, failures/retries, actual totals, account-filtered meal reads, accessible layouts, and Home water agreement.
+
+**Current limits:** The interface only browses today's records. Yesterday's retained data has no history/date selector yet; water has no individual-entry history or undo. Fitness records are device-local rather than cloud-synchronized, and date-only water totals are still shared across accounts on a device. Ownership migration needs a separate approved plan.
+
+See the [design and Android checklist](docs/ui-ux/nutrition-water-trackers.md), [repair root causes](docs/ui-ux/nutrition-repairs.md), and [approved Nutrition milestone](docs/ui-ux/approved-nutrition-milestone.md). UI approval does not imply that every live API, physical-device failure or process-restart case has been verified.
 
 ## Current Development
 
@@ -76,13 +96,13 @@ Current Midnight screenshots have not been added. Place actual Android captures 
 
 ## Known Issues
 
-- Local fitness/profile data is not consistently isolated per account. A separate ownership/migration plan is needed; this milestone does not migrate or delete records.
+- Local fitness/profile data is not consistently isolated per account. Nutrition meal reads now filter existing owner IDs; water and raw Progress statistics still have shared-data limitations. A separate ownership/migration plan is needed; no existing records are migrated or deleted.
 - Weight records lack stable IDs for reliable individual deletion; the Settings clear-weight action also uses a legacy storage path.
-- Meal-generation and quote failures can still use predefined fallbacks. Workout generation now reports failures explicitly; other AI flows need further review.
+- Quote failures can still use predefined fallbacks. Workout and meal generation now report failures explicitly; remaining AI flows need further review.
 - Recurring daily reminders are not implemented.
 - The registration name is collected but not persisted by the authentication repository.
 - Workout history retains the existing latest-50 limit. Live Gemini output, real app-restart persistence, TalkBack, and full authentication flows need further device verification.
-- Full-project analysis reports existing diagnostics in unreviewed nutrition/profile/progress/settings code. Current milestone validation is recorded in the [release review](docs/ui-ux/approved-midnight-milestone.md).
+- Full-project analysis reports existing diagnostics in Profile, Progress, Settings, and the Progress repository. Current Nutrition checks are recorded in the [approved Nutrition milestone](docs/ui-ux/approved-nutrition-milestone.md); the previous approved milestone has a separate [release review](docs/ui-ux/approved-midnight-milestone.md).
 
 The dashboard statistics-source mismatch and workout completion UUID bug have targeted fixes and regression coverage. Their root causes and scope are documented separately from visual decisions.
 
@@ -131,7 +151,7 @@ flutter test
 flutter build apk --debug
 ```
 
-Tests use test doubles and isolated storage; they do not prove live Firebase/Gemini availability or exercise real user records. See the [milestone review](docs/ui-ux/approved-midnight-milestone.md) for actual results and remaining manual checks.
+Tests use test doubles and isolated storage; they do not prove live Firebase/Gemini availability or exercise real user records. See the [Nutrition milestone review](docs/ui-ux/approved-nutrition-milestone.md) and [earlier UI milestone](docs/ui-ux/approved-midnight-milestone.md) for executed results and remaining manual checks.
 
 ## Development Notes
 

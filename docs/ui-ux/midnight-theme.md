@@ -103,3 +103,13 @@ Final command results are recorded after completion. The full local suite includ
 - Protected-file hash comparison: no changes to API, repositories, persistence, Firebase/Cubit/session behavior, app startup, dependency files, or the unreviewed feature sources during this theme milestone. Home/Workout/Login state/action prefixes and the legacy theme were also unchanged.
 
 These are historical results from the theme implementation stage. The owner has since approved the palette and UI on Android and authorized this branch milestone. See the [milestone review](approved-midnight-milestone.md) for the current checks. No merge is authorized.
+
+## Staged Nutrition extension — historical Planner phase
+
+Nutrition Stage 1 now applies the same AppThemeScope to its app bar/tabs and Planner, including the review-and-log sheet. Tracker and Water content explicitly retains the legacy theme until the next feature stage. This is local work awaiting owner review, not part of the earlier approved milestone. No theme tokens or other feature-screen sources changed. See [Nutrition Stage 1](nutrition-stage1.md).
+
+## Circular Tracker / Water extension — owner-approved
+
+The later owner-requested [Nutrition and Water stage](nutrition-water-trackers.md) replaces the legacy Tracker/Water content described above. All three Nutrition tabs now share Midnight. Rings, form controls, summaries, feedback and loading states reuse existing tokens; no centralized palette changes were needed. Planner presentation and other routes are unchanged in this stage.
+
+The owner has since approved the combined Nutrition feature and authorized publication on the existing redesign branch. See the [Nutrition milestone](approved-nutrition-milestone.md); the earlier staged scope/results above are retained as design history.

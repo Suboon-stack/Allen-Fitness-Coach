@@ -89,15 +89,11 @@ void main() {
             .having((e) => e.message, 'timeout', contains('too long'))));
     pending.complete(http.Response('{}', 200));
   });
-  test('Meal and quote calls retain their existing fallback behavior',
-      () async {
+  test('Quote calls retain their existing fallback behavior', () async {
     final client = MockClient(
         (_) async => http.Response('{"error":{"message":"unavailable"}}', 500));
     addTearDown(client.close);
     final service = AiService(client: client);
-    final meals = await service.generateMealPlan(
-        goal: 'Maintain', diet: 'No preference', calories: 2000);
-    expect(meals, contains('Breakfast'));
     expect(await service.getDailyQuote(), isNotEmpty);
   });
   test('A truncated Gemini response is not treated as a complete workout',

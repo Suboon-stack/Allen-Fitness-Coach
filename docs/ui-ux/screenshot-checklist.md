@@ -55,3 +55,11 @@ Earlier green/Performance Studio captures remain historical references, not evid
 | Untouched routes | Legacy styling retained; return restores Midnight | Automated route-boundary checks; manual full-screen review pending |
 
 Use filenames such as `docs/ui-ux/screenshots/midnight-home.png` and `midnight-workout-plan.png`. Record system brightness and text scale, and review screenshots for personal information before sharing. The owner has approved the latest Midnight UI on Android, including the Welcome graphic and “Allen” wordmark. Actual screenshot files, TalkBack, and full functionality checks remain separate and pending. See [milestone validation](approved-midnight-milestone.md).
+
+## Nutrition Stage 1 — historical capture checklist
+
+At the Planner-stage checkpoint, only Planner and the shared shell used Midnight; Tracker/Water were deferred. The later circular-tracker stage below supersedes that scope. See the [actual Android capture checklist](nutrition-stage1.md#screenshot-checklist). Initial preferences, supplied results, review/keyboard/validation, error recovery, and logged-state captures are all pending. No new screenshots or owner approval are claimed.
+
+## Circular Nutrition and Water — feature approved; captures pending
+
+The owner requested both trackers after the Planner stage. [Capture/checklist details](nutrition-water-trackers.md#screenshot-checklist): recorded totals, no-goal state, manual entry/keyboard/validation, Water default-goal/quick-add states, large text and recovery. The owner has approved the feature and authorized branch publication. All new captures remain pending. Earlier Nutrition screenshots are before references; no additional process-restart, accessibility or live-service test result is claimed. See the [approved milestone](approved-nutrition-milestone.md).

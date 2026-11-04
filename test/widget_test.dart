@@ -199,10 +199,10 @@ void main() {
       final routeTheme = Theme.of(tester.element(scaffold));
       expect(
           routeTheme.colorScheme.surface,
-          entry.value == WorkoutPage
+          entry.value == WorkoutPage || entry.value == MealPlannerPage
               ? AppColors.surface
               : destinationTheme.colorScheme.surface);
-      if (entry.value != WorkoutPage) {
+      if (entry.value != WorkoutPage && entry.value != MealPlannerPage) {
         expect(routeTheme.colorScheme.surface,
             AppTheme.legacyTheme.colorScheme.surface);
       }
