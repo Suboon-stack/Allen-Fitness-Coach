@@ -4,79 +4,54 @@ import 'package:firebase_auth/firebase_auth.dart';
 
 class FirebaseAuthRepo implements AuthRepo {
   final FirebaseAuth firebaseAuth = FirebaseAuth.instance;
+
   @override
   Future<void> deleteAccount() async {
-    try {
-      final user = firebaseAuth.currentUser;
-
-      if (user == null) {
-        throw Exception('No user found');
-      }
-
-      await user.delete();
-
-      await logout();
-    } catch (e) {
-      throw Exception('Delete account failed $e');
+    final user = firebaseAuth.currentUser;
+    if (user == null) {
+      throw FirebaseAuthException(code: 'user-not-found');
     }
+    // Let FirebaseAuthException retain its code (e.g. requires-recent-login).
+    await user.delete();
+    await logout();
   }
 
   @override
   Future<AppUser?> getCurrentUser() async {
-    final firebaseUser = firebaseAuth.currentUser;
-
-    if (firebaseUser == null) {
-      return null;
-    }
-
-    return AppUser(uid: firebaseUser.uid, email: firebaseUser.email!);
+    final user = firebaseAuth.currentUser;
+    if (user == null) return null;
+    return AppUser(uid: user.uid, email: user.email ?? '');
   }
 
   @override
   Future<AppUser?> loginWithEmailPassword(String email, String password) async {
-    try {
-      UserCredential userCredential = await firebaseAuth
-          .signInWithEmailAndPassword(email: email, password: password);
-
-      AppUser user = AppUser(uid: userCredential.user!.uid, email: email);
-
-      return user;
-    } catch (e) {
-      throw Exception("Login Failed! $e");
-    }
+    final credential = await firebaseAuth.signInWithEmailAndPassword(
+        email: email, password: password);
+    final user = credential.user;
+    return user == null
+        ? null
+        : AppUser(uid: user.uid, email: user.email ?? email);
   }
 
   @override
-  Future<void> logout() async {
-    await firebaseAuth.signOut();
-  }
+  Future<void> logout() => firebaseAuth.signOut();
 
   @override
   Future<AppUser?> registerWithEmailPassword(
-    String name,
-    String email,
-    String password,
-  ) async {
-    try {
-      UserCredential userCredential = await firebaseAuth
-          .createUserWithEmailAndPassword(email: email, password: password);
-
-      AppUser user = AppUser(uid: userCredential.user!.uid, email: email);
-
-      return user;
-    } catch (e) {
-      throw Exception('Register failed $e');
-    }
+      String name, String email, String password) async {
+    final credential = await firebaseAuth.createUserWithEmailAndPassword(
+        email: email, password: password);
+    final user = credential.user;
+    // Existing name/profile persistence is deliberately deferred: no schema or
+    // local account ownership changes are part of this authentication stage.
+    return user == null
+        ? null
+        : AppUser(uid: user.uid, email: user.email ?? email);
   }
 
   @override
   Future<String> sendPasswordResetEmail(String email) async {
-    try {
-      await firebaseAuth.sendPasswordResetEmail(email: email);
-
-      return "Reset your password in Email Inbox";
-    } catch (e) {
-      throw Exception('Password Reset failed');
-    }
+    await firebaseAuth.sendPasswordResetEmail(email: email);
+    return 'Reset your password in Email Inbox';
   }
 }

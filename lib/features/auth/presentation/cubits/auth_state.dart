@@ -15,5 +15,6 @@ class Unauthenticated extends AuthState {}
 
 class AuthError extends AuthState {
   final String message;
-  AuthError(this.message);
+  final bool sessionUnresolved;
+  AuthError(this.message, {this.sessionUnresolved = false});
 }

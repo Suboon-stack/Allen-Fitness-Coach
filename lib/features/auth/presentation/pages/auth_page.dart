@@ -12,22 +12,14 @@ class AuthPage extends StatefulWidget {
 class _AuthPageState extends State<AuthPage> {
   bool showLoginPage = true;
 
-  void tooglePages() {
-    setState(() {
-      showLoginPage = !showLoginPage;
-    });
-  }
+  void tooglePages() => setState(() => showLoginPage = !showLoginPage);
 
   @override
-  Widget build(BuildContext context) {
-    if (showLoginPage) {
-      return LoginPage(
-        tooglePages: tooglePages,
+  Widget build(BuildContext context) => IndexedStack(
+        index: showLoginPage ? 0 : 1,
+        children: [
+          LoginPage(tooglePages: tooglePages),
+          RegisterPage(tooglePages: tooglePages),
+        ],
       );
-    } else {
-      return RegisterPage(
-        tooglePages: tooglePages,
-      );
-    }
-  }
 }
