@@ -5,7 +5,7 @@ These targeted repairs are separate from the visual redesign. No AuthRepo signat
 ## Root causes and implementation
 
 - Form loss: IntroGate replaced AuthPage with a loading Scaffold, disposing its controllers. Gate now keeps the form subtree mounted through requests; AuthPage keeps both forms mounted through switching.
-- Session restoration: checkAuth had an uncaught await; intro was presented before the result. Restoration now waits for the repository, skips intro for a valid session, and exposes a retry state if verification fails.
+- Session restoration: checkAuth had an uncaught await; intro was presented before the result. Restoration now waits for the repository, skips intro for a valid session, and exposes a retry state if verification fails. Verification loading is explicitly marked so a retry cannot briefly reveal a cached, unverified account.
 - Logout: cached identity was never cleared and errors were uncaught. Both logout and deletion now reconcile via AuthRepo.getCurrentUser; cache and emitted state reflect that result.
 - Deletion failure: catch always emitted Unauthenticated even for requires-recent-login. It now restores the actual session, explains reauthentication, and reports verification failure explicitly if the session cannot be read.
 - Stale account routes: replacing the gate alone left pushed account pages visible after logout. Confirmed sign out returns navigation to the root.

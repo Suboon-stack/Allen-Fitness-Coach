@@ -15,7 +15,7 @@ class AuthCubit extends Cubit<AuthState> {
 
   Future<void> checkAuth() async {
     if (state is AuthLoading) return;
-    emit(AuthLoading());
+    emit(AuthLoading(verifyingSession: true));
     try {
       _currentUser = await authRepo.getCurrentUser();
       _emitSession();

@@ -16,6 +16,15 @@ void main() {
   });
   tearDown(() => cubit.close());
 
+  test('Restoration loading is explicitly marked as session verification', () async {
+    final states = <AuthState>[];
+    final subscription = cubit.stream.listen(states.add);
+    await cubit.checkAuth();
+    await Future<void>.delayed(Duration.zero);
+    expect(states.whereType<AuthLoading>().single.verifyingSession, isTrue);
+    await subscription.cancel();
+  });
+
   test('Restores a persisted identity without requiring login', () async {
     repo.user = user;
     await cubit.checkAuth();
