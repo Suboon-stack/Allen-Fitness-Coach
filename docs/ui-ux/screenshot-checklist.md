@@ -7,9 +7,9 @@ A checklist entry is not evidence of a captured screenshot or usability study. A
 | Capture | Before | After | Comparison focus |
 | --- | --- | --- | --- |
 | Welcome, light mode | Pending | Captured: `screenshots/welcome-light.png` | Composition, hierarchy, CTA reachability |
-| Sign in, empty | Pending | Pending | Labels, action prominence, spacing |
-| Registration, empty | Pending | Pending | Field grouping and account switching |
-| Password reset, empty | Pending | Pending | Old dialog vs dedicated route |
+| Sign in, empty | Pending | Captured: `screenshots/sign-in-light.png` | Labels, action prominence, spacing |
+| Registration, empty | Pending | Captured: `screenshots/registration-light.png` | Field grouping and account switching |
+| Password reset, empty | Pending | Captured: `screenshots/password-reset-light.png` | Old dialog vs dedicated route |
 | Empty registration validation | Pending | Captured: `screenshots/registration-validation-light.png` | Actionable field errors |
 | Login with keyboard | Pending | Pending | Scroll/access to primary action |
 | Dark mode | Pending | Pending | Contrast and coherent surfaces |
@@ -22,4 +22,4 @@ Record image filenames and capture status here as images are actually produced. 
 
 ## Captured artifacts
 
-These are actual 1080×2400 renders from the isolated Android 36.1 emulator at default font scale. The registration capture shows field validation without submitting credentials. Before captures are still pending; the earlier capture attempt found the original emulator signed in on Home, so no authentication baseline pair is claimed. Initial Android captures exposed status-bar contrast, corrected in the final implementation.
+These are actual 1080×2400 renders from the isolated Android 36.1 emulator at default font scale. The registration capture shows field validation without submitting credentials. Before captures are still pending; the earlier capture attempt found the original emulator signed in on Home, so no authentication baseline pair is claimed. The final captures include the corrected Android status-bar contrast.
