@@ -16,7 +16,8 @@ void main() {
   });
   tearDown(() => cubit.close());
 
-  test('Restoration loading is explicitly marked as session verification', () async {
+  test('Restoration loading is explicitly marked as session verification',
+      () async {
     final states = <AuthState>[];
     final subscription = cubit.stream.listen(states.add);
     await cubit.checkAuth();
