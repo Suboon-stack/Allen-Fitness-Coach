@@ -6,680 +6,374 @@ import 'package:allen/fitness/pages/progress_page.dart';
 import 'package:allen/fitness/pages/settings_page.dart';
 import 'package:allen/fitness/pages/workout_page.dart';
 import 'package:allen/fitness/pages/about_page.dart';
-import 'package:allen/pallete.dart';
+import 'package:allen/fitness/theme/app_theme.dart';
+import 'package:allen/fitness/widgets/allen_components.dart';
 import 'package:allen/fitness/services/ai_service.dart';
-import 'package:allen/fitness/services/storage_service.dart';
+import 'package:allen/fitness/repositories/workout_repository.dart';
+import 'package:allen/fitness/repositories/progress_repository.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:allen/fitness/pages/calorie_scanner_page.dart';
 
 class HomePage extends StatefulWidget {
-  const HomePage({super.key});
+  const HomePage(
+      {super.key,
+      this.aiService,
+      this.workoutRepository,
+      this.progressRepository});
+  final AiService? aiService;
+  final WorkoutRepository? workoutRepository;
+  final ProgressRepository? progressRepository;
 
   @override
   State<HomePage> createState() => _HomePageState();
 }
 
 class _HomePageState extends State<HomePage> {
-  final AiService _aiService = AiService();
-  final StorageService _storage = StorageService();
-
-  String _quote = 'Loading your daily motivation...';
+  late final AiService _aiService = widget.aiService ?? AiService();
+  late final WorkoutRepository _workouts =
+      widget.workoutRepository ?? WorkoutRepository();
+  late final ProgressRepository _progress =
+      widget.progressRepository ?? ProgressRepository();
+  String _quote = '';
+  bool _quoteFailed = false;
   int _workoutCount = 0;
   int _streak = 0;
+  int _water = 0;
   double? _currentWeight;
   bool _loading = true;
+  bool _failed = false;
+  bool _quoteLoading = false;
 
   @override
   void initState() {
     super.initState();
     _loadData();
+    _loadQuote();
   }
 
   Future<void> _loadData() async {
+    final user = context.read<AuthCubit>().currentUser;
+    setState(() {
+      _loading = true;
+      _failed = false;
+    });
+    if (user == null) {
+      setState(() {
+        _loading = false;
+        _failed = true;
+      });
+      return;
+    }
     try {
-      final quote = await _aiService.getDailyQuote();
-      final workoutCount = await _storage.getWorkoutCount();
-      final streak = await _storage.getStreak();
-      final weight = await _storage.getLatestWeight();
-
+      final (count, weight, streak, water) = await (
+        _workouts.getWorkoutCount(user.uid),
+        _progress.getLatestWeight(user.uid),
+        _workouts.getCurrentStreak(user.uid),
+        _progress.getTodayWaterIntake(user.uid),
+      ).wait;
       if (!mounted) return;
       setState(() {
-        _quote = quote;
-        _workoutCount = workoutCount;
+        _workoutCount = count;
+        _currentWeight = weight?.weight;
         _streak = streak;
-        _currentWeight = weight;
-
+        _water = water;
         _loading = false;
       });
-    } catch (e) {
+    } catch (_) {
       if (!mounted) return;
       setState(() {
-        _quote =
-            '"The only bad workout is the one that didn\'t happen." - Unknown';
+        _failed = true;
         _loading = false;
       });
     }
   }
 
-  void _navigate(Widget page) {
-    Navigator.pop(context);
-    Navigator.push(
-      context,
-      PageRouteBuilder(
-        pageBuilder: (context, animation, secondaryAnimation) => page,
-        transitionsBuilder: (context, animation, secondaryAnimation, child) {
-          return FadeTransition(opacity: animation, child: child);
-        },
-        transitionDuration: const Duration(milliseconds: 200),
-      ),
-    );
+  Future<void> _loadQuote() async {
+    if (_quoteLoading) return;
+    setState(() {
+      _quoteLoading = true;
+      _quoteFailed = false;
+    });
+    try {
+      final quote = await _aiService.getDailyQuote();
+      if (!mounted) return;
+      setState(() {
+        _quote = quote;
+        _quoteLoading = false;
+      });
+    } catch (_) {
+      if (!mounted) return;
+      setState(() {
+        _quoteFailed = true;
+        _quoteLoading = false;
+      });
+    }
   }
 
-  String _greeting() {
-    final hour = DateTime.now().hour;
-    if (hour < 12) return 'Good morning 👋';
-    if (hour < 17) return 'Good afternoon 👋';
-    return 'Good evening 👋';
+  Future<void> _refresh() async {
+    // Quote availability must never hold up local activity or pull-to-refresh.
+    _loadQuote();
+    await _loadData();
+  }
+
+  Future<void> _open(Widget page) async {
+    await Navigator.of(context)
+        .push(MaterialPageRoute<void>(builder: (_) => page));
+    if (mounted) await _loadData();
   }
 
   @override
-  Widget build(BuildContext context) {
-    final user = context.read<AuthCubit>().currentUser;
+  Widget build(BuildContext context) => AppThemeScope(
+        child: Builder(builder: _buildDashboard),
+      );
 
+  Widget _buildDashboard(BuildContext context) {
+    final theme = Theme.of(context);
+    final colors = theme.colorScheme;
+    final hour = DateTime.now().hour;
+    final greeting = hour < 12
+        ? 'Good morning'
+        : hour < 17
+            ? 'Good afternoon'
+            : 'Good evening';
     return Scaffold(
-      backgroundColor: Pallete.backgroundColor,
-      drawer: _buildDrawer(user?.email ?? 'Allen User'),
       appBar: AppBar(
-        backgroundColor: Pallete.surfaceColor,
-        title: const Text(
-          'Allen Fitness',
-          style: TextStyle(
-            color: Pallete.mainFontColor,
-            fontWeight: FontWeight.bold,
-            letterSpacing: 1,
-          ),
-        ),
-        bottom: PreferredSize(
-          preferredSize: const Size.fromHeight(1),
-          child: Container(height: 1, color: Pallete.borderColor),
-        ),
+        title: const Text('Allen',
+            style: TextStyle(
+                fontSize: 20, fontWeight: FontWeight.w700, letterSpacing: -.5)),
+        actions: [
+          IconButton(
+              tooltip: 'Your profile',
+              onPressed: () => _open(const ProfilePage()),
+              icon: const Icon(Icons.person_outline_rounded))
+        ],
       ),
-      body: _loading
-          ? const Center(
-              child: CircularProgressIndicator(
-                color: Pallete.primaryAccent,
-              ),
-            )
-          : RefreshIndicator(
-              onRefresh: _loadData,
-              color: Pallete.primaryAccent,
-              child: SingleChildScrollView(
-                physics: const AlwaysScrollableScrollPhysics(),
-                padding: const EdgeInsets.all(20),
+      drawer: _drawer(context),
+      bottomNavigationBar: NavigationBar(
+        height: 72,
+        selectedIndex: 0,
+        backgroundColor: colors.surface,
+        indicatorColor: colors.secondaryContainer,
+        labelBehavior: MediaQuery.textScalerOf(context).scale(12) > 18
+            ? NavigationDestinationLabelBehavior.onlyShowSelected
+            : NavigationDestinationLabelBehavior.alwaysShow,
+        onDestinationSelected: (index) {
+          switch (index) {
+            case 1:
+              _open(const WorkoutPage());
+            case 2:
+              _open(const MealPlannerPage());
+            case 3:
+              _open(const ProgressPage());
+          }
+        },
+        destinations: const [
+          NavigationDestination(
+              icon: Icon(Icons.home_outlined),
+              selectedIcon: Icon(Icons.home_rounded),
+              label: 'Home'),
+          NavigationDestination(
+              icon: Icon(Icons.fitness_center_rounded), label: 'Workouts'),
+          NavigationDestination(
+              icon: Icon(Icons.restaurant_outlined), label: 'Nutrition'),
+          NavigationDestination(
+              icon: Icon(Icons.insights_outlined), label: 'Progress'),
+        ],
+      ),
+      body: SafeArea(
+          top: false,
+          bottom: false,
+          child: RefreshIndicator(
+            onRefresh: _refresh,
+            child: SingleChildScrollView(
+              physics: const AlwaysScrollableScrollPhysics(),
+              padding: const EdgeInsets.fromLTRB(20, 8, 20, 16),
+              child: Center(
+                  child: ConstrainedBox(
+                constraints:
+                    const BoxConstraints(maxWidth: AppLayout.contentWidth),
                 child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    // Greeting
-                    Text(
-                      _greeting(),
-                      style: const TextStyle(
-                        color: Pallete.subFontColor,
-                        fontSize: 14,
+                    crossAxisAlignment: CrossAxisAlignment.stretch,
+                    children: [
+                      Text(greeting, style: theme.textTheme.bodyMedium),
+                      const SizedBox(height: 4),
+                      Text('Your day.', style: theme.textTheme.headlineSmall),
+                      const SizedBox(height: 16),
+                      Material(
+                        color: colors.secondaryContainer,
+                        borderRadius: BorderRadius.circular(12),
+                        child: Padding(
+                            padding: const EdgeInsets.symmetric(
+                                horizontal: 16, vertical: 12),
+                            child: Wrap(
+                                alignment: WrapAlignment.spaceBetween,
+                                crossAxisAlignment: WrapCrossAlignment.center,
+                                spacing: 16,
+                                runSpacing: 8,
+                                children: [
+                                  Text('Ask Allen',
+                                      style: theme.textTheme.titleMedium),
+                                  FilledButton(
+                                      onPressed: () => _open(const ChatPage()),
+                                      child: const Text('Open coach')),
+                                ])),
                       ),
-                    ),
-                    const SizedBox(height: 4),
-                    const Text(
-                      'Ready to crush it today?',
-                      style: TextStyle(
-                        color: Pallete.mainFontColor,
-                        fontSize: 22,
-                        fontWeight: FontWeight.bold,
-                      ),
-                    ),
-
-                    const SizedBox(height: 20),
-
-                    // Quote card
-                    Container(
-                      width: double.infinity,
-                      padding: const EdgeInsets.all(16),
-                      decoration: BoxDecoration(
-                        color: Pallete.cardColor,
-                        borderRadius: BorderRadius.circular(14),
-                        border: Border.all(color: Pallete.borderColor),
-                      ),
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          const Row(
+                      const SizedBox(height: 20),
+                      Text('Activity', style: theme.textTheme.titleMedium),
+                      const SizedBox(height: 8),
+                      if (_loading)
+                        const Padding(
+                            padding: EdgeInsets.symmetric(vertical: 20),
+                            child: Row(children: [
+                              SizedBox.square(
+                                  dimension: 18,
+                                  child: CircularProgressIndicator(
+                                      strokeWidth: 2)),
+                              SizedBox(width: 12),
+                              Expanded(child: Text('Loading your activity…')),
+                            ]))
+                      else if (_failed)
+                        Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
                             children: [
-                              Icon(
-                                Icons.format_quote_rounded,
-                                color: Pallete.primaryAccent,
-                                size: 18,
-                              ),
-                              SizedBox(width: 6),
-                              Text(
-                                'Daily Motivation',
-                                style: TextStyle(
-                                  color: Pallete.primaryAccent,
-                                  fontSize: 12,
-                                  fontWeight: FontWeight.bold,
-                                  letterSpacing: 1,
-                                ),
-                              ),
-                            ],
-                          ),
-                          const SizedBox(height: 10),
-                          Text(
-                            _quote,
-                            style: const TextStyle(
-                              color: Pallete.mainFontColor,
-                              fontSize: 14,
-                              fontStyle: FontStyle.italic,
-                              height: 1.5,
-                            ),
-                          ),
+                              const Text('Your activity couldn’t be loaded.'),
+                              TextButton(
+                                  onPressed: _loadData,
+                                  child: const Text('Try again')),
+                            ])
+                      else ...[
+                        AllenMetricGrid(metrics: [
+                          AllenMetric(
+                              label: 'Completed workouts',
+                              value: '$_workoutCount'),
+                          AllenMetric(
+                              label: 'Latest weight',
+                              value: _currentWeight == null
+                                  ? 'Not logged'
+                                  : '${_currentWeight!.toStringAsFixed(1)} kg'),
+                          AllenMetric(
+                              label: 'Workout streak',
+                              value:
+                                  '$_streak ${_streak == 1 ? 'day' : 'days'}'),
+                          AllenMetric(
+                              label: 'Water today', value: '$_water ml'),
+                        ]),
+                        if (_workoutCount == 0 &&
+                            _currentWeight == null &&
+                            _water == 0 &&
+                            _streak == 0) ...[
+                          const SizedBox(height: 8),
+                          const Text(
+                              'Start with a workout, meal, or progress log.'),
+                        ],
+                      ],
+                      const SizedBox(height: 16),
+                      ListTile(
+                        contentPadding: EdgeInsets.zero,
+                        title: const Text('Scan food'),
+                        subtitle: const Text('Estimate nutrition from a photo'),
+                        trailing: const Icon(Icons.chevron_right_rounded),
+                        onTap: () => _open(const CalorieScannerPage()),
+                      ),
+                      const Divider(height: 16),
+                      ExpansionTile(
+                        tilePadding: EdgeInsets.zero,
+                        title: Text('Daily motivation',
+                            style: theme.textTheme.bodyMedium),
+                        childrenPadding: const EdgeInsets.only(bottom: 12),
+                        shape: const Border(),
+                        collapsedShape: const Border(),
+                        children: [
+                          if (_quoteLoading)
+                            const Padding(
+                                padding: EdgeInsets.all(8),
+                                child: LinearProgressIndicator(
+                                    semanticsLabel: 'Loading daily motivation'))
+                          else if (_quoteFailed)
+                            TextButton(
+                                onPressed: _loadQuote,
+                                child: const Text('Retry daily motivation'))
+                          else
+                            Align(
+                                alignment: Alignment.centerLeft,
+                                child: Text(_quote)),
                         ],
                       ),
-                    ),
-
-                    const SizedBox(height: 20),
-
-                    // Stats row
-                    Row(
-                      children: [
-                        _statCard(
-                          '$_workoutCount',
-                          'Workouts',
-                          Icons.fitness_center_rounded,
-                        ),
-                        const SizedBox(width: 10),
-                        _statCard(
-                          _currentWeight != null
-                              ? '${_currentWeight!.toStringAsFixed(1)}kg'
-                              : '--',
-                          'Weight',
-                          Icons.monitor_weight_outlined,
-                        ),
-                        const SizedBox(width: 10),
-                        _statCard(
-                          '$_streak',
-                          'Day streak',
-                          Icons.local_fire_department_rounded,
-                        ),
-                      ],
-                    ),
-
-                    const SizedBox(height: 24),
-
-                    // Quick actions
-                    const Text(
-                      'QUICK START',
-                      style: TextStyle(
-                        color: Pallete.subFontColor,
-                        fontSize: 11,
-                        fontWeight: FontWeight.bold,
-                        letterSpacing: 1.5,
-                      ),
-                    ),
-                    const SizedBox(height: 12),
-
-                    _quickActionCard(
-                      icon: Icons.fitness_center_rounded,
-                      title: 'Generate Workout',
-                      subtitle: 'AI creates your perfect workout',
-                      iconBgColor: Colors.orange.withValues(alpha: 0.15),
-                      iconColor: Colors.orange,
-                      logo: const _LogoWidget(
-                        bgColor: Colors.orange,
-                        icon: Icons.fitness_center_rounded,
-                        emoji: '💪',
-                      ),
-                      onTap: () => Navigator.push(
-                        context,
-                        PageRouteBuilder(
-                          pageBuilder: (c, a, b) => const WorkoutPage(),
-                          transitionsBuilder: (c, a, b, child) =>
-                              FadeTransition(opacity: a, child: child),
-                          transitionDuration: const Duration(milliseconds: 200),
-                        ),
-                      ),
-                    ),
-                    const SizedBox(height: 10),
-                    _quickActionCard(
-                      icon: Icons.restaurant_rounded,
-                      title: 'Plan My Meals',
-                      subtitle: 'AI generates your meal plan',
-                      iconBgColor: Colors.green.withValues(alpha: 0.15),
-                      iconColor: Colors.green,
-                      logo: const _LogoWidget(
-                        bgColor: Colors.green,
-                        icon: Icons.restaurant_rounded,
-                        emoji: '🥗',
-                      ),
-                      onTap: () => Navigator.push(
-                        context,
-                        PageRouteBuilder(
-                          pageBuilder: (c, a, b) => const MealPlannerPage(),
-                          transitionsBuilder: (c, a, b, child) =>
-                              FadeTransition(opacity: a, child: child),
-                          transitionDuration: const Duration(milliseconds: 200),
-                        ),
-                      ),
-                    ),
-                    const SizedBox(height: 10),
-                    _quickActionCard(
-                      icon: Icons.document_scanner_rounded,
-                      title: 'Scan Food Calories',
-                      subtitle: 'AI estimates calories from photo',
-                      iconBgColor: Colors.purple.withValues(alpha: 0.15),
-                      iconColor: Colors.purple,
-                      logo: const _LogoWidget(
-                        bgColor: Colors.purple,
-                        icon: Icons.document_scanner_rounded,
-                        emoji: '📷',
-                      ),
-                      onTap: () => Navigator.push(
-                        context,
-                        PageRouteBuilder(
-                          pageBuilder: (c, a, b) => const CalorieScannerPage(),
-                          transitionsBuilder: (c, a, b, child) =>
-                              FadeTransition(opacity: a, child: child),
-                          transitionDuration: const Duration(milliseconds: 200),
-                        ),
-                      ),
-                    ),
-                    const SizedBox(height: 10),
-                    _quickActionCard(
-                      icon: Icons.chat_bubble_outline_rounded,
-                      title: 'Ask AI Coach',
-                      subtitle: 'Get fitness advice instantly',
-                      iconBgColor: Colors.blue.withValues(alpha: 0.15),
-                      iconColor: Colors.blue,
-                      logo: const _LogoWidget(
-                        bgColor: Colors.blue,
-                        icon: Icons.chat_bubble_outline_rounded,
-                        emoji: '🤖',
-                      ),
-                      onTap: () => Navigator.push(
-                        context,
-                        PageRouteBuilder(
-                          pageBuilder: (c, a, b) => const ChatPage(),
-                          transitionsBuilder: (c, a, b, child) =>
-                              FadeTransition(opacity: a, child: child),
-                          transitionDuration: const Duration(milliseconds: 200),
-                        ),
-                      ),
-                    ),
-                    const SizedBox(height: 10),
-                    _quickActionCard(
-                      icon: Icons.trending_up_rounded,
-                      title: 'Log Progress',
-                      subtitle: 'Track your weight and workouts',
-                      iconBgColor: Colors.teal.withValues(alpha: 0.15),
-                      iconColor: Colors.teal,
-                      logo: const _LogoWidget(
-                        bgColor: Colors.teal,
-                        icon: Icons.trending_up_rounded,
-                        emoji: '📊',
-                      ),
-                      onTap: () => Navigator.push(
-                        context,
-                        PageRouteBuilder(
-                          pageBuilder: (c, a, b) => const ProgressPage(),
-                          transitionsBuilder: (c, a, b, child) =>
-                              FadeTransition(opacity: a, child: child),
-                          transitionDuration: const Duration(milliseconds: 200),
-                        ),
-                      ),
-                    ),
-                    const SizedBox(height: 20),
-                  ],
-                ),
-              ),
+                    ]),
+              )),
             ),
+          )),
     );
   }
 
-  Widget _statCard(String value, String label, IconData icon) {
-    return Expanded(
-      child: Container(
-        padding: const EdgeInsets.symmetric(vertical: 14, horizontal: 10),
-        decoration: BoxDecoration(
-          color: Pallete.cardColor,
-          borderRadius: BorderRadius.circular(12),
-          border: Border.all(color: Pallete.borderColor),
-        ),
-        child: Column(
-          children: [
-            Icon(icon, color: Pallete.primaryAccent, size: 20),
-            const SizedBox(height: 6),
-            Text(
-              value,
-              style: const TextStyle(
-                color: Pallete.mainFontColor,
-                fontSize: 16,
-                fontWeight: FontWeight.bold,
-              ),
-            ),
-            Text(
-              label,
-              style: const TextStyle(
-                color: Pallete.subFontColor,
-                fontSize: 10,
-              ),
-            ),
-          ],
-        ),
-      ),
-    );
-  }
+  Widget _drawer(BuildContext context) {
+    final email =
+        context.read<AuthCubit>().currentUser?.email ?? 'Your account';
+    void navigate(Widget page) {
+      Navigator.pop(context);
+      _open(page);
+    }
 
-  Widget _quickActionCard({
-    required IconData icon,
-    required String title,
-    required String subtitle,
-    required VoidCallback onTap,
-    Color? iconBgColor,
-    Color? iconColor,
-    Widget? logo,
-  }) {
-    return GestureDetector(
-      onTap: onTap,
-      child: Container(
-        padding: const EdgeInsets.all(16),
-        decoration: BoxDecoration(
-          color: Pallete.cardColor,
-          borderRadius: BorderRadius.circular(14),
-          border: Border.all(color: Pallete.borderColor),
-        ),
-        child: Row(
-          children: [
-            Container(
-              padding: const EdgeInsets.all(12),
-              width: 52,
-              height: 52,
-              decoration: BoxDecoration(
-                color: iconBgColor ??
-                    Pallete.primaryAccent.withValues(alpha: 0.15),
-                borderRadius: BorderRadius.circular(12),
-              ),
-              child: logo ??
-                  Icon(icon,
-                      color: iconColor ?? Pallete.primaryAccent, size: 24),
-            ),
-            const SizedBox(width: 14),
-            Expanded(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(
-                    title,
-                    style: const TextStyle(
-                      color: Pallete.mainFontColor,
-                      fontWeight: FontWeight.bold,
-                      fontSize: 14,
-                    ),
-                  ),
-                  Text(
-                    subtitle,
-                    style: const TextStyle(
-                      color: Pallete.subFontColor,
-                      fontSize: 12,
-                    ),
-                  ),
-                ],
-              ),
-            ),
-            const Icon(
-              Icons.arrow_forward_ios_rounded,
-              color: Pallete.subFontColor,
-              size: 14,
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-
-  Widget _buildDrawer(String email) {
     return Drawer(
-      backgroundColor: Pallete.drawerBackground,
-      child: Column(
-        children: [
-          Container(
-            width: double.infinity,
-            padding: const EdgeInsets.fromLTRB(20, 60, 20, 24),
-            decoration: const BoxDecoration(
-              color: Pallete.surfaceColor,
-              border: Border(
-                bottom: BorderSide(color: Pallete.borderColor),
-              ),
-            ),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Container(
-                  padding: const EdgeInsets.all(3),
-                  decoration: BoxDecoration(
-                    shape: BoxShape.circle,
-                    border: Border.all(
-                      color: Pallete.primaryAccent,
-                      width: 2,
-                    ),
-                  ),
-                  child: CircleAvatar(
-                    radius: 28,
-                    backgroundColor: Pallete.cardColor,
-                    child: Text(
-                      email.substring(0, 1).toUpperCase(),
-                      style: const TextStyle(
-                        fontSize: 22,
-                        fontWeight: FontWeight.bold,
-                        color: Pallete.primaryAccent,
-                      ),
-                    ),
-                  ),
-                ),
-                const SizedBox(height: 12),
-                Text(
-                  email,
-                  style: const TextStyle(
-                    color: Pallete.mainFontColor,
-                    fontWeight: FontWeight.bold,
-                    fontSize: 14,
-                  ),
-                  overflow: TextOverflow.ellipsis,
-                ),
-                const SizedBox(height: 4),
-                Row(
-                  children: [
-                    Container(
-                      width: 8,
-                      height: 8,
-                      decoration: const BoxDecoration(
-                        color: Pallete.successColor,
-                        shape: BoxShape.circle,
-                      ),
-                    ),
-                    const SizedBox(width: 6),
-                    const Text(
-                      'Active',
-                      style: TextStyle(
-                        color: Pallete.successColor,
-                        fontSize: 12,
-                      ),
-                    ),
-                  ],
-                ),
-              ],
-            ),
-          ),
-          Expanded(
-            child: Padding(
-              padding: const EdgeInsets.symmetric(vertical: 12),
-              child: Column(
-                children: [
-                  _drawerItem(
-                    icon: Icons.home_rounded,
-                    label: 'Home',
-                    isActive: true,
-                    onTap: () => Navigator.pop(context),
-                  ),
-                  _drawerItem(
-                    icon: Icons.fitness_center_rounded,
-                    label: 'Workout Generator',
-                    onTap: () => _navigate(const WorkoutPage()),
-                  ),
-                  _drawerItem(
-                    icon: Icons.restaurant_rounded,
-                    label: 'Meal Planner',
-                    onTap: () => _navigate(const MealPlannerPage()),
-                  ),
-                  _drawerItem(
-                    icon: Icons.document_scanner_rounded,
-                    label: 'Calorie Scanner',
-                    onTap: () => _navigate(const CalorieScannerPage()),
-                  ),
-                  _drawerItem(
-                    icon: Icons.trending_up_rounded,
-                    label: 'Progress',
-                    onTap: () => _navigate(const ProgressPage()),
-                  ),
-                  _drawerItem(
-                    icon: Icons.chat_bubble_outline_rounded,
-                    label: 'AI Coach Chat',
-                    onTap: () => _navigate(const ChatPage()),
-                  ),
-                  _drawerItem(
-                    icon: Icons.person_outline_rounded,
-                    label: 'Profile',
-                    onTap: () => _navigate(const ProfilePage()),
-                  ),
-                  _drawerItem(
-                    icon: Icons.settings_outlined,
-                    label: 'Settings',
-                    onTap: () => _navigate(const SettingsPage()),
-                  ),
-                  _drawerItem(
-                    icon: Icons.info_outline_rounded,
-                    label: 'About',
-                    onTap: () => _navigate(const AboutPage()),
-                  ),
-                  const Spacer(),
-                  const Divider(color: Pallete.borderColor, height: 1),
-                  const SizedBox(height: 8),
-                  _drawerItem(
-                    icon: Icons.logout_rounded,
-                    label: 'Logout',
-                    iconColor: Pallete.dangerColor,
-                    labelColor: Pallete.dangerColor,
-                    onTap: () {
-                      Navigator.pop(context);
-                      context.read<AuthCubit>().logout();
-                    },
-                  ),
-                  const SizedBox(height: 16),
-                ],
-              ),
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-
-  Widget _drawerItem({
-    required IconData icon,
-    required String label,
-    required VoidCallback onTap,
-    bool isActive = false,
-    Color? iconColor,
-    Color? labelColor,
-  }) {
-    return Padding(
-      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 2),
-      child: Material(
-        color: isActive ? Pallete.drawerItemActive : Colors.transparent,
-        borderRadius: BorderRadius.circular(12),
-        child: InkWell(
-          onTap: onTap,
-          borderRadius: BorderRadius.circular(12),
-          child: Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 13),
-            child: Row(
-              children: [
-                Icon(
-                  icon,
-                  color: iconColor ??
-                      (isActive ? Pallete.primaryAccent : Pallete.subFontColor),
-                  size: 22,
-                ),
-                const SizedBox(width: 14),
-                Text(
-                  label,
-                  style: TextStyle(
-                    color: labelColor ??
-                        (isActive
-                            ? Pallete.mainFontColor
-                            : Pallete.subFontColor),
-                    fontWeight: isActive ? FontWeight.bold : FontWeight.normal,
-                    fontSize: 15,
-                  ),
-                ),
-                if (isActive) ...[
-                  const Spacer(),
-                  Container(
-                    width: 6,
-                    height: 6,
-                    decoration: const BoxDecoration(
-                      color: Pallete.primaryAccent,
-                      shape: BoxShape.circle,
-                    ),
-                  ),
-                ],
-              ],
-            ),
-          ),
-        ),
-      ),
-    );
-  }
-}
-
-class _LogoWidget extends StatelessWidget {
-  final Color bgColor;
-  final IconData icon;
-  final String emoji;
-
-  const _LogoWidget({
-    required this.bgColor,
-    required this.icon,
-    required this.emoji,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    return Container(
-      width: 52,
-      height: 52,
-      decoration: BoxDecoration(
-        color: bgColor.withValues(alpha: 0.2),
-        borderRadius: BorderRadius.circular(14),
-      ),
-      child: Stack(
-        alignment: Alignment.center,
-        children: [
-          Icon(icon, color: bgColor, size: 26),
-          Positioned(
-            right: 2,
-            bottom: 2,
-            child: Text(emoji, style: const TextStyle(fontSize: 14)),
-          ),
-        ],
-      ),
-    );
+        child: SafeArea(
+            child: ListView(padding: const EdgeInsets.all(16), children: [
+      Padding(
+          padding: const EdgeInsets.all(16),
+          child:
+              Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+            Text('Your Allen',
+                style: Theme.of(context).textTheme.headlineSmall),
+            const SizedBox(height: 8),
+            Text(email),
+          ])),
+      const Divider(),
+      ListTile(
+          selected: true,
+          leading: const Icon(Icons.home_outlined),
+          title: const Text('Home'),
+          onTap: () => Navigator.pop(context)),
+      ListTile(
+          leading: const Icon(Icons.fitness_center_rounded),
+          title: const Text('Workouts'),
+          onTap: () => navigate(const WorkoutPage())),
+      ListTile(
+          leading: const Icon(Icons.restaurant_outlined),
+          title: const Text('Meal planner'),
+          onTap: () => navigate(const MealPlannerPage())),
+      ListTile(
+          leading: const Icon(Icons.document_scanner_outlined),
+          title: const Text('Calorie scanner'),
+          onTap: () => navigate(const CalorieScannerPage())),
+      ListTile(
+          leading: const Icon(Icons.insights_outlined),
+          title: const Text('Progress'),
+          onTap: () => navigate(const ProgressPage())),
+      ListTile(
+          leading: const Icon(Icons.chat_bubble_outline_rounded),
+          title: const Text('AI coach'),
+          onTap: () => navigate(const ChatPage())),
+      const Divider(),
+      ListTile(
+          leading: const Icon(Icons.person_outline_rounded),
+          title: const Text('Profile'),
+          onTap: () => navigate(const ProfilePage())),
+      ListTile(
+          leading: const Icon(Icons.settings_outlined),
+          title: const Text('Settings'),
+          onTap: () => navigate(const SettingsPage())),
+      ListTile(
+          leading: const Icon(Icons.info_outline_rounded),
+          title: const Text('About'),
+          onTap: () => navigate(const AboutPage())),
+      const Divider(),
+      ListTile(
+          leading: const Icon(Icons.logout_rounded),
+          title: const Text('Sign out'),
+          onTap: () {
+            Navigator.pop(context);
+            context.read<AuthCubit>().logout();
+          }),
+    ])));
   }
 }

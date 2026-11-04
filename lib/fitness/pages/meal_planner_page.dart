@@ -1,757 +1,501 @@
+import 'dart:async';
 import 'package:allen/features/auth/presentation/cubits/auth_cubit.dart';
+import 'package:allen/features/auth/presentation/cubits/auth_state.dart';
 import 'package:allen/fitness/models/meal_model.dart';
+import 'package:allen/fitness/models/nutrition_tracker_data.dart';
 import 'package:allen/fitness/repositories/meal_repository.dart';
 import 'package:allen/fitness/repositories/progress_repository.dart';
-import 'package:allen/pallete.dart';
 import 'package:allen/fitness/services/ai_service.dart';
+import 'package:allen/fitness/services/local_storage_service.dart';
+import 'package:allen/fitness/theme/app_theme.dart';
+import 'package:allen/fitness/widgets/meal_entry_sheet.dart';
+import 'package:allen/fitness/widgets/nutrition_planner_tab.dart';
+import 'package:allen/fitness/widgets/tracker_progress.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 
-
 class MealPlannerPage extends StatefulWidget {
-  const MealPlannerPage({super.key});
-
+  const MealPlannerPage(
+      {super.key, this.aiService, this.repository, this.progressRepository});
+  final AiService? aiService;
+  final MealRepository? repository;
+  final ProgressRepository? progressRepository;
   @override
   State<MealPlannerPage> createState() => _MealPlannerPageState();
 }
 
 class _MealPlannerPageState extends State<MealPlannerPage>
-    with SingleTickerProviderStateMixin {
-  final AiService _aiService = AiService();
-  final MealRepository _mealRepo = MealRepository();
-  final ProgressRepository _progressRepo = ProgressRepository();
+    with SingleTickerProviderStateMixin, WidgetsBindingObserver {
+  late final _meals = widget.repository ?? MealRepository();
+  late final _progress = widget.progressRepository ?? ProgressRepository();
+  late final _ai = widget.aiService ?? AiService();
+  final _local = LocalStorageService();
+  late final TabController _tabs;
+  Timer? _midnight;
+  List<Meal> _todayMeals = [];
+  NutritionTotals? _totals;
+  NutritionGoals _goals = const NutritionGoals();
+  bool _goalReadFailed = false;
+  bool _nutritionLoading = true,
+      _waterLoading = true,
+      _waterSaving = false,
+      _openingMeal = false;
+  String? _nutritionError, _waterError, _observedUser, _nutritionDay, _waterDay;
+  int? _water;
+  int _nutritionRequest = 0, _waterRequest = 0;
+  static const _defaultWaterGoal = 2000.0;
 
-  late TabController _tabController;
-
-  String _selectedGoal = 'Lose Weight';
-  String _selectedDiet = 'No preference';
-  int _selectedCalories = 2000;
-  List<Map<String, String>> _meals = [];
-  bool _loading = false;
-  bool _generated = false;
-
-  int _todayCalories = 0;
-  double _todayProtein = 0;
-  double _todayCarbs = 0;
-  double _todayFat = 0;
-  int _todayWater = 0;
-
-  final _caloriesController = TextEditingController();
-  final _proteinController = TextEditingController();
-  final _carbsController = TextEditingController();
-  final _fatController = TextEditingController();
-  final _mealNameController = TextEditingController();
-  String _selectedMealTime = 'Breakfast';
-
-  final List<String> _goals = ['Lose Weight', 'Gain Muscle', 'Maintain'];
-  final List<String> _diets = [
-    'No preference',
-    'Vegetarian',
-    'Vegan',
-    'High Protein',
-    'Low Carb'
-  ];
-  final List<String> _mealTimes = ['Breakfast', 'Lunch', 'Dinner', 'Snack'];
-
+  String _day() => DateTime.now().toIso8601String().substring(0, 10);
   @override
   void initState() {
     super.initState();
-    _tabController = TabController(length: 3, vsync: this);
-    _loadTodayNutrition();
+    WidgetsBinding.instance.addObserver(this);
+    _observedUser = context.read<AuthCubit>().currentUser?.uid;
+    _tabs = TabController(length: 3, vsync: this)..addListener(_checkDay);
+    _refresh();
+    _scheduleMidnight();
   }
 
   @override
   void dispose() {
-    _tabController.dispose();
-    _caloriesController.dispose();
-    _proteinController.dispose();
-    _carbsController.dispose();
-    _fatController.dispose();
-    _mealNameController.dispose();
+    WidgetsBinding.instance.removeObserver(this);
+    _midnight?.cancel();
+    _tabs.removeListener(_checkDay);
+    _tabs.dispose();
     super.dispose();
   }
 
-  Future<void> _loadTodayNutrition() async {
-    final user = context.read<AuthCubit>().currentUser;
-    if (user == null) return;
-
-    final nutrition =
-        await _mealRepo.getDailyNutrition(user.uid, DateTime.now());
-    final water = await _progressRepo.getTodayWaterIntake(user.uid);
-
-    setState(() {
-      _todayCalories = nutrition['calories'] as int;
-      _todayProtein = nutrition['protein'] as double;
-      _todayCarbs = nutrition['carbs'] as double;
-      _todayFat = nutrition['fat'] as double;
-      _todayWater = water;
-    });
-  }
-
-  Future<void> _generateMealPlan() async {
-    setState(() {
-      _loading = true;
-      _meals = [];
-      _generated = false;
-    });
-
-    final result = await _aiService.generateMealPlan(
-      goal: _selectedGoal,
-      diet: _selectedDiet,
-      calories: _selectedCalories,
-    );
-
-    final lines = result.split('\n').where((l) => l.trim().isNotEmpty);
-    final meals = <Map<String, String>>[];
-
-    for (final line in lines) {
-      final parts = line.split('|');
-      if (parts.length >= 4) {
-        meals.add({
-          'time': parts[0].trim(),
-          'name': parts[1].trim(),
-          'calories': parts[2].trim(),
-          'protein': parts[3].trim(),
-        });
-      }
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (state == AppLifecycleState.resumed) {
+      _refresh();
+      _scheduleMidnight();
     }
+  }
 
-    setState(() {
-      _meals = meals;
-      _loading = false;
-      _generated = true;
+  void _scheduleMidnight() {
+    _midnight?.cancel();
+    final now = DateTime.now();
+    final next = DateTime(now.year, now.month, now.day + 1);
+    _midnight = Timer(next.difference(now), () {
+      if (mounted) {
+        _refresh();
+        _scheduleMidnight();
+      }
     });
   }
 
-  Future<void> _addMeal() async {
+  void _checkDay() {
+    if (_nutritionDay != null &&
+        _nutritionDay != _day() &&
+        !_nutritionLoading) {
+      _loadNutrition();
+    }
+    if (_waterDay != null && _waterDay != _day() && !_waterLoading) {
+      _loadWater();
+    }
+  }
+
+  Future<void> _refresh() async {
+    await Future.wait([_loadNutrition(), _loadWater()]);
+  }
+
+  Future<void> _loadNutrition() async {
+    final user = context.read<AuthCubit>().currentUser;
+    final request = ++_nutritionRequest;
+    final date = DateTime.now(), day = _day();
+    setState(() {
+      _nutritionLoading = true;
+      _nutritionError = null;
+    });
+    if (user == null) {
+      setState(() {
+        _nutritionLoading = false;
+        _nutritionError = 'Sign in to view your nutrition.';
+        _totals = null;
+        _todayMeals = [];
+      });
+      return;
+    }
+    try {
+      // One cached list drives both the ring/macros and today's meals.
+      final meals = await _meals.getMealsByDate(user.uid, date);
+      final totals = NutritionTotals.fromMeals(meals);
+      var goals = const NutritionGoals();
+      var failedGoals = false;
+      try {
+        goals = NutritionGoals.fromStoredProfile(
+            await _local.getUserProfile(), user.uid);
+      } catch (_) {
+        failedGoals = true;
+      }
+      if (!mounted ||
+          request != _nutritionRequest ||
+          context.read<AuthCubit>().currentUser?.uid != user.uid) {
+        return;
+      }
+      if (day != _day()) {
+        unawaited(_loadNutrition());
+        return;
+      }
+      setState(() {
+        _todayMeals = meals;
+        _totals = totals;
+        _goals = goals;
+        _goalReadFailed = failedGoals;
+        _nutritionLoading = false;
+        _nutritionDay = day;
+      });
+    } catch (error) {
+      if (!mounted || request != _nutritionRequest) return;
+      setState(() {
+        _nutritionLoading = false;
+        _nutritionError = error is MealStorageException
+            ? error.message
+            : 'Today’s nutrition couldn’t be loaded. Please retry.';
+      });
+    }
+  }
+
+  Future<void> _loadWater() async {
+    final user = context.read<AuthCubit>().currentUser;
+    final request = ++_waterRequest;
+    final day = _day();
+    setState(() {
+      _waterLoading = true;
+      _waterError = null;
+    });
+    if (user == null) {
+      setState(() {
+        _waterLoading = false;
+        _waterError = 'Sign in to view water tracking.';
+        _water = null;
+      });
+      return;
+    }
+    try {
+      final water = await _progress.getTodayWaterIntake(user.uid);
+      if (water < 0) throw const FormatException('Invalid water total');
+      if (!mounted ||
+          request != _waterRequest ||
+          context.read<AuthCubit>().currentUser?.uid != user.uid) {
+        return;
+      }
+      if (day != _day()) {
+        unawaited(_loadWater());
+        return;
+      }
+      setState(() {
+        _water = water;
+        _waterLoading = false;
+        _waterDay = day;
+      });
+    } catch (error) {
+      if (!mounted || request != _waterRequest) return;
+      setState(() {
+        _waterLoading = false;
+        _waterError = error is WaterStorageException
+            ? error.message
+            : 'Today’s water couldn’t be loaded. Please refresh.';
+      });
+    }
+  }
+
+  Future<void> _openMeal(BuildContext themedContext) async {
+    if (_openingMeal) return;
     final user = context.read<AuthCubit>().currentUser;
     if (user == null) return;
-
-    final meal = Meal(
-      id: '',
-      userId: user.uid,
-      name: _mealNameController.text,
-      mealTime: _selectedMealTime,
-      calories: int.tryParse(_caloriesController.text) ?? 0,
-      protein: double.tryParse(_proteinController.text) ?? 0,
-      carbs: double.tryParse(_carbsController.text) ?? 0,
-      fat: double.tryParse(_fatController.text) ?? 0,
-      date: DateTime.now(),
-      createdAt: DateTime.now(),
-    );
-
-    await _mealRepo.createMeal(meal);
-    _mealNameController.clear();
-    _caloriesController.clear();
-    _proteinController.clear();
-    _carbsController.clear();
-    _fatController.clear();
-
-    await _loadTodayNutrition();
-
-    if (mounted) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-            content: Text('Meal added!'),
-            backgroundColor: Pallete.successColor),
-      );
+    setState(() => _openingMeal = true);
+    final saved = await showModalBottomSheet<bool>(
+        context: themedContext,
+        isScrollControlled: true,
+        useSafeArea: true,
+        isDismissible: false,
+        enableDrag: false,
+        builder: (_) => MealEntrySheet(repository: _meals, userId: user.uid));
+    if (!mounted) return;
+    setState(() => _openingMeal = false);
+    if (saved == true) {
+      await _loadNutrition();
+      if (mounted) {
+        _notify(_nutritionError == null
+            ? 'Meal saved.'
+            : 'Meal saved. Refresh to update your totals.');
+      }
     }
   }
 
   Future<void> _addWater(int amount) async {
+    if (_waterSaving || _waterLoading || _waterError != null) return;
     final user = context.read<AuthCubit>().currentUser;
     if (user == null) return;
-
-    await _progressRepo.addWaterIntake(user.uid, amount);
-    await _loadTodayNutrition();
+    setState(() => _waterSaving = true);
+    try {
+      await _progress.addWaterIntake(user.uid, amount);
+      if (!mounted) return;
+      await _loadWater();
+      if (mounted) {
+        _notify(_waterError == null
+            ? 'Added $amount ml.'
+            : 'Water logged. Refresh to see your total.');
+      }
+    } catch (error) {
+      if (mounted) {
+        setState(() => _waterError = error is WaterStorageException
+            ? error.message
+            : 'Water save couldn’t be confirmed. Refresh your total before adding again.');
+      }
+    } finally {
+      if (mounted) setState(() => _waterSaving = false);
+    }
   }
+
+  void _notify(String text) =>
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(text)));
 
   @override
-  Widget build(BuildContext context) {
-    return Scaffold(
-      backgroundColor: Pallete.backgroundColor,
-      appBar: AppBar(
-        backgroundColor: Pallete.surfaceColor,
-        title: const Text('Nutrition'),
-        bottom: TabBar(
-          controller: _tabController,
-          indicatorColor: Pallete.primaryAccent,
-          labelColor: Pallete.primaryAccent,
-          unselectedLabelColor: Pallete.subFontColor,
-          tabs: const [
-            Tab(text: 'Tracker'),
-            Tab(text: 'Planner'),
-            Tab(text: 'Water'),
-          ],
-        ),
-      ),
-      body: TabBarView(
-        controller: _tabController,
-        children: [
-          _buildTrackerTab(),
-          _buildPlannerTab(),
-          _buildWaterTab(),
-        ],
-      ),
-    );
-  }
+  Widget build(BuildContext context) => BlocListener<AuthCubit, AuthState>(
+      listener: (context, state) {
+        final uid = context.read<AuthCubit>().currentUser?.uid;
+        if (uid != _observedUser) {
+          _observedUser = uid;
+          _refresh();
+        }
+      },
+      child: AppThemeScope(
+          child: Builder(
+              builder: (context) => PopScope(
+                  canPop: !_waterSaving,
+                  onPopInvokedWithResult: (didPop, _) {
+                    if (!didPop && _waterSaving) {
+                      _notify('Finishing your water update…');
+                    }
+                  },
+                  child: Scaffold(
+                    appBar: AppBar(
+                        title: const Text('Nutrition'),
+                        bottom: TabBar(controller: _tabs, tabs: const [
+                          Tab(text: 'Tracker'),
+                          Tab(text: 'Planner'),
+                          Tab(text: 'Water')
+                        ])),
+                    body: SafeArea(
+                        top: false,
+                        child: TabBarView(controller: _tabs, children: [
+                          _tracker(context),
+                          NutritionPlannerTab(
+                              aiService: _ai,
+                              repository: _meals,
+                              onLogged: _loadNutrition,
+                              // Planner preference is not a configured profile goal.
+                              onTargetChanged: (_) {}),
+                          _waterTracker(context),
+                        ])),
+                  )))));
 
-  Widget _buildTrackerTab() {
-    final user = context.read<AuthCubit>().currentUser;
-    if (user == null) return const Center(child: Text('Please login'));
+  Widget _page(
+          {required Future<void> Function() onRefresh,
+          required List<Widget> children}) =>
+      RefreshIndicator(
+          onRefresh: onRefresh,
+          child: ListView(
+              physics: const AlwaysScrollableScrollPhysics(),
+              padding: const EdgeInsets.all(AppSpacing.page),
+              children: [
+                Align(
+                    alignment: Alignment.topCenter,
+                    child: ConstrainedBox(
+                        constraints: const BoxConstraints(
+                            maxWidth: AppLayout.contentWidth),
+                        child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.stretch,
+                            children: children)))
+              ]));
 
-    return SingleChildScrollView(
-      padding: const EdgeInsets.all(20),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          _nutritionSummary(),
-          const SizedBox(height: 20),
-          _addMealForm(),
-          const SizedBox(height: 20),
-          _sectionLabel('Today\'s Meals'),
-          const SizedBox(height: 10),
-          FutureBuilder<List<Meal>>(
-            future: _mealRepo.getUserMeals(user.uid),
-            builder: (context, snapshot) {
-              if (!snapshot.hasData)
-                return const Center(child: CircularProgressIndicator());
-              final today = DateTime.now();
-              final meals = snapshot.data!
-                  .where((m) =>
-                      m.date.year == today.year &&
-                      m.date.month == today.month &&
-                      m.date.day == today.day)
-                  .toList();
-              if (meals.isEmpty) {
-                return const Center(
-                    child: Text('No meals logged today',
-                        style: TextStyle(color: Pallete.subFontColor)));
-              }
-              return Column(
-                  children: meals.map((m) => _mealLogCard(m)).toList());
-            },
-          ),
-        ],
-      ),
-    );
-  }
+  Widget _heading(BuildContext context, String text, VoidCallback? refresh) =>
+      Wrap(
+          alignment: WrapAlignment.spaceBetween,
+          crossAxisAlignment: WrapCrossAlignment.center,
+          spacing: AppSpacing.md,
+          runSpacing: AppSpacing.sm,
+          children: [
+            Text(text, style: Theme.of(context).textTheme.titleLarge),
+            TextButton(onPressed: refresh, child: const Text('Refresh'))
+          ]);
 
-  Widget _nutritionSummary() {
-    return Container(
-      padding: const EdgeInsets.all(16),
-      decoration: BoxDecoration(
-          color: Pallete.cardColor,
-          borderRadius: BorderRadius.circular(16),
-          border: Border.all(color: Pallete.borderColor)),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Row(
-            mainAxisAlignment: MainAxisAlignment.spaceBetween,
-            children: [
-              const Text('Today\'s Progress',
-                  style: TextStyle(
-                      color: Pallete.mainFontColor,
-                      fontWeight: FontWeight.bold)),
-              Text('$_todayCalories / $_selectedCalories kcal',
-                  style: const TextStyle(
-                      color: Pallete.primaryAccent,
-                      fontWeight: FontWeight.bold)),
-            ],
-          ),
-          const SizedBox(height: 16),
-          _progressBar('Calories', _todayCalories.toDouble(),
-              _selectedCalories.toDouble(), Colors.orange),
-          const SizedBox(height: 12),
-          _macroBar('Protein', _todayProtein, 150, Colors.red),
-          const SizedBox(height: 8),
-          _macroBar('Carbs', _todayCarbs, 250, Colors.blue),
-          const SizedBox(height: 8),
-          _macroBar('Fat', _todayFat, 65, Colors.green),
-        ],
-      ),
-    );
-  }
-
-  Widget _progressBar(String label, double value, double max, Color color) {
-    final progress = (value / max).clamp(0.0, 1.0);
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        Row(mainAxisAlignment: MainAxisAlignment.spaceBetween, children: [
-          Text(label,
-              style:
-                  const TextStyle(color: Pallete.subFontColor, fontSize: 12)),
-          Text('${value.toInt()} / ${max.toInt()}',
-              style:
-                  const TextStyle(color: Pallete.subFontColor, fontSize: 11)),
-        ]),
-        const SizedBox(height: 4),
-        ClipRRect(
-          borderRadius: BorderRadius.circular(4),
-          child: LinearProgressIndicator(
-              value: progress,
-              backgroundColor: Pallete.surfaceColor,
-              valueColor: AlwaysStoppedAnimation(color),
-              minHeight: 8),
-        ),
-      ],
-    );
-  }
-
-  Widget _macroBar(String label, double value, double target, Color color) {
-    return Row(
-      children: [
-        SizedBox(
-            width: 50,
-            child: Text(label,
-                style: const TextStyle(
-                    color: Pallete.subFontColor, fontSize: 12))),
-        Expanded(
-          child: ClipRRect(
-            borderRadius: BorderRadius.circular(2),
+  Widget _tracker(BuildContext context) {
+    final theme = Theme.of(context);
+    final totals = _totals;
+    return _page(onRefresh: _loadNutrition, children: [
+      _heading(context, 'Today’s nutrition',
+          _nutritionLoading ? null : _loadNutrition),
+      const SizedBox(height: AppSpacing.md),
+      if (_nutritionLoading)
+        const Padding(
+            padding: EdgeInsets.symmetric(vertical: AppSpacing.xl),
             child: LinearProgressIndicator(
-              value: (value / target).clamp(0.0, 1.0),
-              backgroundColor: Pallete.surfaceColor,
-              valueColor: AlwaysStoppedAnimation(color),
-              minHeight: 6,
-            ),
-          ),
-        ),
-        const SizedBox(width: 8),
-        Text('${value.toInt()}g',
-            style: TextStyle(
-                color: color, fontSize: 11, fontWeight: FontWeight.bold)),
+                semanticsLabel: 'Loading recorded nutrition'))
+      else if (_nutritionError != null)
+        NutritionFeedback(_nutritionError!, onRetry: _loadNutrition)
+      else if (totals != null) ...[
+        TrackerProgress(
+            key: const Key('calorie-progress'),
+            value: totals.calories.toDouble(),
+            unit: 'kcal',
+            semanticName: 'Calories',
+            centerIcon: const NutritionAppleIcon(),
+            goal: _goals.calories,
+            goalLabel: 'Saved calorie goal',
+            noGoalLabel: _goalReadFailed
+                ? 'Calorie goal unavailable.'
+                : 'No calorie goal configured.'),
+        const SizedBox(height: AppSpacing.lg),
+        _macros(context, totals),
+        if (_goalReadFailed)
+          const Padding(
+              padding: EdgeInsets.only(top: AppSpacing.sm),
+              child: Text(
+                  'Saved goals couldn’t be read. Recorded meal totals are shown.')),
       ],
-    );
-  }
-
-  Widget _addMealForm() {
-    return Container(
-      padding: const EdgeInsets.all(16),
-      decoration: BoxDecoration(
-          color: Pallete.cardColor,
-          borderRadius: BorderRadius.circular(16),
-          border: Border.all(color: Pallete.borderColor)),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          const Text('Log a Meal',
-              style: TextStyle(
-                  color: Pallete.mainFontColor, fontWeight: FontWeight.bold)),
-          const SizedBox(height: 12),
-          DropdownButtonFormField<String>(
-            value: _selectedMealTime,
-            decoration: InputDecoration(
-              filled: true,
-              fillColor: Pallete.surfaceColor,
-              border:
-                  OutlineInputBorder(borderRadius: BorderRadius.circular(8)),
-            ),
-            items: _mealTimes
-                .map((t) => DropdownMenuItem(
-                    value: t,
-                    child: Text(t,
-                        style: const TextStyle(color: Pallete.mainFontColor))))
-                .toList(),
-            onChanged: (v) => setState(() => _selectedMealTime = v!),
-          ),
-          const SizedBox(height: 8),
-          TextField(
-              controller: _mealNameController,
-              style: const TextStyle(color: Pallete.mainFontColor),
-              decoration: InputDecoration(
-                  labelText: 'Meal Name',
-                  labelStyle: const TextStyle(color: Pallete.subFontColor),
-                  filled: true,
-                  fillColor: Pallete.surfaceColor,
-                  border: OutlineInputBorder(
-                      borderRadius: BorderRadius.circular(8)))),
-          const SizedBox(height: 8),
-          Row(
-            children: [
-              Expanded(
-                  child: TextField(
-                      controller: _caloriesController,
-                      keyboardType: TextInputType.number,
-                      style: const TextStyle(color: Pallete.mainFontColor),
-                      decoration: InputDecoration(
-                          labelText: 'Calories',
-                          labelStyle:
-                              const TextStyle(color: Pallete.subFontColor),
-                          filled: true,
-                          fillColor: Pallete.surfaceColor,
-                          border: OutlineInputBorder(
-                              borderRadius: BorderRadius.circular(8))))),
-              const SizedBox(width: 8),
-              Expanded(
-                  child: TextField(
-                      controller: _proteinController,
-                      keyboardType: TextInputType.number,
-                      style: const TextStyle(color: Pallete.mainFontColor),
-                      decoration: InputDecoration(
-                          labelText: 'Protein (g)',
-                          labelStyle:
-                              const TextStyle(color: Pallete.subFontColor),
-                          filled: true,
-                          fillColor: Pallete.surfaceColor,
-                          border: OutlineInputBorder(
-                              borderRadius: BorderRadius.circular(8))))),
-            ],
-          ),
-          const SizedBox(height: 8),
-          Row(
-            children: [
-              Expanded(
-                  child: TextField(
-                      controller: _carbsController,
-                      keyboardType: TextInputType.number,
-                      style: const TextStyle(color: Pallete.mainFontColor),
-                      decoration: InputDecoration(
-                          labelText: 'Carbs (g)',
-                          labelStyle:
-                              const TextStyle(color: Pallete.subFontColor),
-                          filled: true,
-                          fillColor: Pallete.surfaceColor,
-                          border: OutlineInputBorder(
-                              borderRadius: BorderRadius.circular(8))))),
-              const SizedBox(width: 8),
-              Expanded(
-                  child: TextField(
-                      controller: _fatController,
-                      keyboardType: TextInputType.number,
-                      style: const TextStyle(color: Pallete.mainFontColor),
-                      decoration: InputDecoration(
-                          labelText: 'Fat (g)',
-                          labelStyle:
-                              const TextStyle(color: Pallete.subFontColor),
-                          filled: true,
-                          fillColor: Pallete.surfaceColor,
-                          border: OutlineInputBorder(
-                              borderRadius: BorderRadius.circular(8))))),
-            ],
-          ),
-          const SizedBox(height: 12),
-          SizedBox(
-            width: double.infinity,
-            child: ElevatedButton(
-              onPressed: _addMeal,
-              style: ElevatedButton.styleFrom(
-                  backgroundColor: Pallete.primaryAccent,
-                  padding: const EdgeInsets.symmetric(vertical: 12),
-                  shape: RoundedRectangleBorder(
-                      borderRadius: BorderRadius.circular(8))),
-              child: const Text('Add Meal',
-                  style: TextStyle(
-                      color: Colors.black, fontWeight: FontWeight.bold)),
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-
-  Widget _mealLogCard(Meal meal) {
-    return Container(
-      margin: const EdgeInsets.only(bottom: 8),
-      padding: const EdgeInsets.all(12),
-      decoration: BoxDecoration(
-          color: Pallete.cardColor,
-          borderRadius: BorderRadius.circular(12),
-          border: Border.all(color: Pallete.borderColor)),
-      child: Row(
-        children: [
-          Container(
-            padding: const EdgeInsets.all(8),
-            decoration: BoxDecoration(
-                color: Pallete.primaryAccent.withValues(alpha: 0.1),
-                borderRadius: BorderRadius.circular(8)),
-            child: const Icon(Icons.restaurant,
-                color: Pallete.primaryAccent, size: 18),
-          ),
-          const SizedBox(width: 12),
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(meal.name,
-                    style: const TextStyle(
-                        color: Pallete.mainFontColor,
-                        fontWeight: FontWeight.bold)),
-                Text(meal.mealTime,
-                    style: const TextStyle(
-                        color: Pallete.subFontColor, fontSize: 11)),
-              ],
-            ),
-          ),
-          Column(
-            crossAxisAlignment: CrossAxisAlignment.end,
-            children: [
-              Text('${meal.calories} kcal',
-                  style: const TextStyle(
-                      color: Colors.orange, fontWeight: FontWeight.bold)),
-              Text(
-                  'P: ${meal.protein.toInt()}g C: ${meal.carbs.toInt()}g F: ${meal.fat.toInt()}g',
-                  style: const TextStyle(
-                      color: Pallete.subFontColor, fontSize: 10)),
-            ],
-          ),
-        ],
-      ),
-    );
-  }
-
-  Widget _buildPlannerTab() {
-    return SingleChildScrollView(
-      padding: const EdgeInsets.all(20),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          _sectionLabel('Your Goal'),
-          const SizedBox(height: 10),
-          _chipRow(
-              _goals, _selectedGoal, (v) => setState(() => _selectedGoal = v)),
-          const SizedBox(height: 20),
-          _sectionLabel('Diet Preference'),
-          const SizedBox(height: 10),
-          _chipRow(
-              _diets, _selectedDiet, (v) => setState(() => _selectedDiet = v)),
-          const SizedBox(height: 20),
-          _sectionLabel('Daily Calories Target'),
-          const SizedBox(height: 10),
-          Container(
-            padding: const EdgeInsets.all(16),
-            decoration: BoxDecoration(
-                color: Pallete.cardColor,
-                borderRadius: BorderRadius.circular(14),
-                border: Border.all(color: Pallete.borderColor)),
-            child: Column(
-              children: [
-                Row(
-                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                    children: [
-                      const Text('Calories',
-                          style: TextStyle(color: Pallete.mainFontColor)),
-                      Text('$_selectedCalories kcal',
-                          style: const TextStyle(
-                              color: Pallete.primaryAccent,
-                              fontWeight: FontWeight.bold)),
-                    ]),
-                SliderTheme(
-                  data: SliderTheme.of(context).copyWith(
-                    activeTrackColor: Pallete.primaryAccent,
-                    inactiveTrackColor: Pallete.borderColor,
-                    thumbColor: Pallete.primaryAccent,
-                  ),
-                  child: Slider(
-                      value: _selectedCalories.toDouble(),
-                      min: 1200,
-                      max: 4000,
-                      divisions: 28,
-                      onChanged: (v) =>
-                          setState(() => _selectedCalories = v.toInt())),
-                ),
-              ],
-            ),
-          ),
-          const SizedBox(height: 24),
-          _generateButton(),
-          if (_generated && _meals.isNotEmpty) ...[
-            const SizedBox(height: 24),
-            _sectionLabel('Your Meal Plan'),
-            const SizedBox(height: 10),
-            ..._meals.map((meal) => _mealCard(meal)),
-          ],
-        ],
-      ),
-    );
-  }
-
-  Widget _buildWaterTab() {
-    return SingleChildScrollView(
-      padding: const EdgeInsets.all(20),
-      child: Column(
-        children: [
-          Container(
-            padding: const EdgeInsets.all(24),
-            decoration: BoxDecoration(
-                color: Pallete.cardColor,
-                borderRadius: BorderRadius.circular(16),
-                border: Border.all(color: Pallete.borderColor)),
-            child: Column(
-              children: [
-                const Icon(Icons.water_drop, color: Colors.blue, size: 48),
-                const SizedBox(height: 12),
-                Text('$_todayWater ml',
-                    style: const TextStyle(
-                        color: Pallete.mainFontColor,
-                        fontSize: 32,
-                        fontWeight: FontWeight.bold)),
-                const Text('Today\'s water intake',
-                    style: TextStyle(color: Pallete.subFontColor)),
-                const SizedBox(height: 20),
-                Row(
-                  mainAxisAlignment: MainAxisAlignment.center,
-                  children: [
-                    _waterButton(100),
-                    const SizedBox(width: 12),
-                    _waterButton(250),
-                    const SizedBox(width: 12),
-                    _waterButton(500),
-                  ],
-                ),
-              ],
-            ),
-          ),
-          const SizedBox(height: 24),
-          Container(
-            padding: const EdgeInsets.all(16),
-            decoration: BoxDecoration(
-                color: Pallete.surfaceColor,
-                borderRadius: BorderRadius.circular(12)),
-            child: const Column(
-              children: [
-                Text('Daily Water Goal: 2000ml',
-                    style: TextStyle(
-                        color: Pallete.mainFontColor,
-                        fontWeight: FontWeight.bold)),
-                SizedBox(height: 8),
-                Text('Stay hydrated for better workout performance!',
-                    style: TextStyle(color: Pallete.subFontColor, fontSize: 12),
-                    textAlign: TextAlign.center),
-              ],
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-
-  Widget _waterButton(int amount) {
-    return GestureDetector(
-      onTap: () => _addWater(amount),
-      child: Container(
-        padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
-        decoration: BoxDecoration(
-            color: Colors.blue.withValues(alpha: 0.2),
-            borderRadius: BorderRadius.circular(12),
-            border: Border.all(color: Colors.blue)),
-        child: Text('+${amount}ml',
-            style: const TextStyle(
-                color: Colors.blue, fontWeight: FontWeight.bold)),
-      ),
-    );
-  }
-
-  Widget _sectionLabel(String label) {
-    return Text(label.toUpperCase(),
-        style: const TextStyle(
-            color: Pallete.subFontColor,
-            fontSize: 11,
-            fontWeight: FontWeight.bold,
-            letterSpacing: 1.5));
-  }
-
-  Widget _chipRow(
-      List<String> items, String selected, Function(String) onSelect) {
-    return Wrap(
-        spacing: 8,
-        runSpacing: 8,
-        children: items.map((item) {
-          final isSelected = item == selected;
-          return GestureDetector(
-            onTap: () => onSelect(item),
-            child: Container(
-              padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
-              decoration: BoxDecoration(
-                  color: isSelected ? Pallete.primaryAccent : Pallete.cardColor,
-                  borderRadius: BorderRadius.circular(20),
-                  border: Border.all(
-                      color: isSelected
-                          ? Pallete.primaryAccent
-                          : Pallete.borderColor)),
-              child: Text(item,
-                  style: TextStyle(
-                      color: isSelected
-                          ? Pallete.backgroundColor
-                          : Pallete.subFontColor,
-                      fontWeight:
-                          isSelected ? FontWeight.bold : FontWeight.normal,
-                      fontSize: 13)),
-            ),
-          );
-        }).toList());
-  }
-
-  Widget _generateButton() {
-    return GestureDetector(
-      onTap: _loading ? null : _generateMealPlan,
-      child: Container(
-        width: double.infinity,
-        padding: const EdgeInsets.symmetric(vertical: 16),
-        decoration: BoxDecoration(
-            color: _loading ? Pallete.cardColor : Pallete.primaryAccent,
-            borderRadius: BorderRadius.circular(14)),
-        child: Center(
-            child: _loading
-                ? const SizedBox(
-                    width: 20,
-                    height: 20,
-                    child: CircularProgressIndicator(
-                        color: Pallete.primaryAccent, strokeWidth: 2))
-                : const Text('✨ Generate Meal Plan',
-                    style: TextStyle(
-                        color: Pallete.backgroundColor,
-                        fontWeight: FontWeight.bold,
-                        fontSize: 15))),
-      ),
-    );
-  }
-
-  Widget _mealCard(Map<String, String> meal) {
-    final icons = {
-      'Breakfast': '🌅',
-      'Lunch': '☀️',
-      'Dinner': '🌙',
-      'Snack': '🍎'
-    };
-    final emoji = icons.entries
-        .firstWhere(
-            (e) =>
-                meal['time']?.toLowerCase().contains(e.key.toLowerCase()) ??
-                false,
-            orElse: () => const MapEntry('', '🍽'))
-        .value;
-    return Container(
-      margin: const EdgeInsets.only(bottom: 10),
-      padding: const EdgeInsets.all(14),
-      decoration: BoxDecoration(
-          color: Pallete.cardColor,
-          borderRadius: BorderRadius.circular(12),
-          border: Border.all(color: Pallete.borderColor)),
-      child: Row(
-        children: [
-          Text(emoji, style: const TextStyle(fontSize: 24)),
-          const SizedBox(width: 12),
-          Expanded(
+      const SizedBox(height: AppSpacing.lg),
+      FilledButton(
+          onPressed:
+              _openingMeal || context.read<AuthCubit>().currentUser == null
+                  ? null
+                  : () => _openMeal(context),
+          child: const Text('Add Meal')),
+      const SizedBox(height: AppSpacing.xl),
+      Text('Today’s meals', style: theme.textTheme.titleMedium),
+      const SizedBox(height: AppSpacing.sm),
+      if (!_nutritionLoading && _nutritionError == null) ...[
+        if (_todayMeals.isEmpty)
+          const Padding(
+              padding: EdgeInsets.symmetric(vertical: AppSpacing.md),
               child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                Text(meal['time'] ?? '',
-                    style: const TextStyle(
-                        color: Pallete.subFontColor, fontSize: 11)),
-                Text(meal['name'] ?? '',
-                    style: const TextStyle(
-                        color: Pallete.mainFontColor,
-                        fontWeight: FontWeight.bold,
-                        fontSize: 14)),
-                Text('${meal['calories']} • ${meal['protein']}',
-                    style: const TextStyle(
-                        color: Pallete.subFontColor, fontSize: 12)),
-              ])),
+                    Text('No meals recorded today.'),
+                    SizedBox(height: AppSpacing.sm),
+                    Text('Add a meal to start tracking your nutrition.'),
+                  ])),
+        for (var i = 0; i < _todayMeals.length; i++) ...[
+          if (i > 0) const Divider(),
+          Padding(
+              padding: const EdgeInsets.symmetric(vertical: AppSpacing.md),
+              child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(_todayMeals[i].mealTime,
+                        style: theme.textTheme.bodySmall
+                            ?.copyWith(color: theme.colorScheme.secondary)),
+                    const SizedBox(height: AppSpacing.xs),
+                    Text(_todayMeals[i].name,
+                        style: theme.textTheme.titleMedium),
+                    const SizedBox(height: AppSpacing.xs),
+                    Text(
+                        '${trackerNumber(_todayMeals[i].calories)} kcal · ${trackerNumber(_todayMeals[i].protein)} g protein'),
+                    Text(
+                        '${trackerNumber(_todayMeals[i].carbs)} g carbs · ${trackerNumber(_todayMeals[i].fat)} g fat',
+                        style: theme.textTheme.bodySmall),
+                  ])),
         ],
-      ),
-    );
+      ],
+    ]);
   }
+
+  Widget _macros(BuildContext context, NutritionTotals totals) => Container(
+      padding: const EdgeInsets.all(AppSpacing.md),
+      decoration: BoxDecoration(
+          color: Theme.of(context).colorScheme.surface,
+          borderRadius: BorderRadius.circular(AppRadii.panel)),
+      child: LayoutBuilder(builder: (context, constraints) {
+        final columns = MediaQuery.textScalerOf(context).scale(14) > 21 ? 1 : 3;
+        final width =
+            (constraints.maxWidth - AppSpacing.md * (columns - 1)) / columns;
+        return Wrap(
+            spacing: AppSpacing.md,
+            runSpacing: AppSpacing.lg,
+            children: [
+              for (final macro in [
+                ('Protein', totals.protein, _goals.protein),
+                ('Carbohydrates', totals.carbs, _goals.carbs),
+                ('Fat', totals.fat, _goals.fat)
+              ])
+                SizedBox(
+                    width: width,
+                    child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(macro.$1,
+                              style: Theme.of(context).textTheme.bodySmall),
+                          const SizedBox(height: AppSpacing.xs),
+                          Text('${trackerNumber(macro.$2)} g',
+                              style: Theme.of(context).textTheme.titleMedium),
+                          if (macro.$3 != null) ...[
+                            const SizedBox(height: AppSpacing.xs),
+                            Text('Goal ${trackerNumber(macro.$3!)} g',
+                                style: Theme.of(context).textTheme.bodySmall),
+                            Text(
+                                '${trackerNumber(macro.$2 / macro.$3! * 100)}% of goal',
+                                style: Theme.of(context)
+                                    .textTheme
+                                    .bodySmall
+                                    ?.copyWith(
+                                        color: Theme.of(context)
+                                            .colorScheme
+                                            .secondary)),
+                          ],
+                        ])),
+            ]);
+      }));
+
+  Widget _waterTracker(BuildContext context) => _page(
+          onRefresh: () async {
+            if (!_waterSaving) await _loadWater();
+          },
+          children: [
+            _heading(context, 'Today’s hydration',
+                _waterSaving || _waterLoading ? null : _loadWater),
+            const SizedBox(height: AppSpacing.md),
+            if (_waterLoading)
+              const Padding(
+                  padding: EdgeInsets.symmetric(vertical: AppSpacing.xl),
+                  child: LinearProgressIndicator(
+                      semanticsLabel: 'Loading recorded water'))
+            else if (_waterError != null)
+              NutritionFeedback(_waterError!,
+                  onRetry: _waterSaving ? null : _loadWater)
+            else if (_water != null)
+              TrackerProgress(
+                  key: const Key('water-progress'),
+                  value: _water!.toDouble(),
+                  unit: 'ml',
+                  semanticName: 'Water',
+                  centerIcon: const Icon(Icons.water_drop_outlined),
+                  goal: _defaultWaterGoal,
+                  goalLabel: 'App default goal'),
+            const SizedBox(height: AppSpacing.lg),
+            Text('Add water', style: Theme.of(context).textTheme.titleMedium),
+            const SizedBox(height: AppSpacing.sm),
+            Wrap(spacing: AppSpacing.sm, runSpacing: AppSpacing.sm, children: [
+              for (final amount in [100, 250, 500])
+                FilledButton(
+                    onPressed:
+                        _waterSaving || _waterLoading || _waterError != null
+                            ? null
+                            : () => _addWater(amount),
+                    child: Text('+$amount ml')),
+            ]),
+            if (_waterSaving)
+              Padding(
+                  padding: const EdgeInsets.only(top: AppSpacing.md),
+                  child: Semantics(
+                      liveRegion: true, child: const Text('Saving water…'))),
+            const SizedBox(height: AppSpacing.lg),
+            const Text(
+                'The 2,000 ml app default is not a personalized recommendation.'),
+            const SizedBox(height: AppSpacing.sm),
+            Text('Individual water entries and undo are not available.',
+                style: Theme.of(context).textTheme.bodySmall),
+          ]);
 }

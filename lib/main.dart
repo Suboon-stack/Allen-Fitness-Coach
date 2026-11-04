@@ -31,7 +31,8 @@ class MyApp extends StatelessWidget {
       create: (context) => AuthCubit(authRepo: firebaseAuthRepo)..checkAuth(),
       child: MaterialApp(
         debugShowCheckedModeBanner: false,
-        theme: AppTheme.darkTheme,
+        // Unmigrated screens retain their existing palette during staged review.
+        theme: AppTheme.legacyTheme,
         home: const IntroGate(),
       ),
     );
