@@ -1,3 +1,5 @@
+> Historical design record. The selected current palette and reviewed-screen styling are specified in [Midnight Navy + Electric Blue](midnight-theme.md).
+
 # Performance Studio — approved direction
 
 The owner selected Option A: ink navy, electric cobalt, warm white, and restrained lime accents. The current review scope is authentication only. The previously implemented green Home remains unchanged pending its own approval.

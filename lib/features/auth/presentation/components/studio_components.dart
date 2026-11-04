@@ -1,79 +1,22 @@
 import 'package:allen/features/auth/presentation/theme/performance_theme.dart';
+import 'package:allen/fitness/theme/app_theme.dart';
 import 'package:flutter/material.dart';
 
 class StudioWordmark extends StatelessWidget {
-  const StudioWordmark({super.key, this.onDark = false});
-  final bool onDark;
+  const StudioWordmark({super.key, this.label = 'allen'});
+  final String label;
   @override
-  Widget build(BuildContext context) =>
-      Row(mainAxisSize: MainAxisSize.min, children: [
-        Container(
-            width: 32,
-            height: 32,
-            decoration: BoxDecoration(
-                color: onDark ? PerformanceTheme.lime : PerformanceTheme.cobalt,
-                borderRadius: BorderRadius.circular(10)),
-            child: Icon(Icons.north_east_rounded,
-                size: 22, color: onDark ? PerformanceTheme.ink : Colors.white)),
-        const SizedBox(width: 10),
-        Text('allen',
-            textScaler: TextScaler.noScaling,
-            style: TextStyle(
-                fontSize: 28,
-                fontWeight: FontWeight.w800,
-                letterSpacing: -1.4,
-                color: onDark
-                    ? Colors.white
-                    : Theme.of(context).colorScheme.onSurface)),
-      ]);
-}
-
-/// Decorative track: a visual metaphor for momentum, never a progress chart.
-class MovementArtwork extends StatelessWidget {
-  const MovementArtwork({super.key});
-  @override
-  Widget build(BuildContext context) => ExcludeSemantics(
-        child: CustomPaint(painter: _MovementPainter(), size: Size.infinite),
+  Widget build(BuildContext context) => Text(
+        label,
+        textScaler: TextScaler.noScaling,
+        style: Theme.of(context).textTheme.titleLarge?.copyWith(
+            fontSize: AppType.wordmark,
+            fontWeight: FontWeight.w700,
+            letterSpacing: -.7),
       );
 }
 
-class _MovementPainter extends CustomPainter {
-  @override
-  void paint(Canvas canvas, Size size) {
-    canvas.save();
-    canvas.clipRect(Offset.zero & size);
-    canvas.scale(size.width / 440, size.height / 280);
-    for (var i = 0; i < 5; i++) {
-      final offset = i * 18.0;
-      final path = Path()
-        ..moveTo(-50, 260 + offset)
-        ..cubicTo(75, 260 + offset, 30, 45 + offset, 200, 45 + offset)
-        ..cubicTo(340, 45 + offset, 240, 225 + offset, 490, 170 + offset);
-      canvas.drawPath(
-          path,
-          Paint()
-            ..color = i == 0 ? PerformanceTheme.lime : const Color(0xFF5E77F6)
-            ..style = PaintingStyle.stroke
-            ..strokeWidth = i == 0 ? 3 : 1.5);
-    }
-    canvas.drawCircle(
-        const Offset(200, 45), 11, Paint()..color = PerformanceTheme.lime);
-    canvas.drawCircle(
-        const Offset(200, 45), 4, Paint()..color = PerformanceTheme.ink);
-    canvas.drawCircle(
-        const Offset(200, 45),
-        23,
-        Paint()
-          ..color = PerformanceTheme.lime.withValues(alpha: .22)
-          ..style = PaintingStyle.stroke
-          ..strokeWidth = 1);
-    canvas.restore();
-  }
-
-  @override
-  bool shouldRepaint(_MovementPainter oldDelegate) => false;
-}
-
+/// A single, keyboard-safe form column shared by registration, reset and intro.
 class StudioAuthLayout extends StatelessWidget {
   const StudioAuthLayout(
       {super.key,
@@ -82,6 +25,8 @@ class StudioAuthLayout extends StatelessWidget {
       required this.description,
       required this.child,
       this.onBack});
+  // Kept for presentation-call compatibility; introductory taglines are no
+  // longer rendered alongside the one primary heading.
   final String eyebrow;
   final String title;
   final String description;
@@ -92,120 +37,49 @@ class StudioAuthLayout extends StatelessWidget {
   Widget build(BuildContext context) =>
       PerformanceScope(child: Builder(builder: (context) {
         final theme = Theme.of(context);
-        return Scaffold(
-          body: SafeArea(child: LayoutBuilder(builder: (context, constraints) {
-            final wide = constraints.maxWidth >= 900;
-            final padding = constraints.maxWidth < 380 ? 20.0 : 32.0;
-            final form = ConstrainedBox(
-                constraints:
-                    const BoxConstraints(maxWidth: StudioSpace.formWidth),
-                child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text(eyebrow,
-                          style: theme.textTheme.labelLarge?.copyWith(
-                              color: theme.colorScheme.primary,
-                              letterSpacing: 1.5,
-                              fontSize: 11)),
-                      const SizedBox(height: 16),
-                      Text(title, style: theme.textTheme.displaySmall),
-                      const SizedBox(height: 12),
-                      Text(description, style: theme.textTheme.bodyLarge),
-                      const SizedBox(height: StudioSpace.section),
-                      child,
-                    ]));
-            return SingleChildScrollView(
-              keyboardDismissBehavior: ScrollViewKeyboardDismissBehavior.onDrag,
-              child: ConstrainedBox(
-                constraints: BoxConstraints(minHeight: constraints.maxHeight),
-                child: Center(
-                    child: Container(
+        return Scaffold(body:
+            SafeArea(child: LayoutBuilder(builder: (context, constraints) {
+          final compact = constraints.maxHeight < 600;
+          return SingleChildScrollView(
+            keyboardDismissBehavior: ScrollViewKeyboardDismissBehavior.onDrag,
+            child: Align(
+                alignment: Alignment.topCenter,
+                child: ConstrainedBox(
                   constraints:
-                      const BoxConstraints(maxWidth: StudioSpace.contentWidth),
-                  padding: EdgeInsets.all(padding),
-                  child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.stretch,
-                      children: [
-                        SizedBox(
-                            height: 48,
-                            child: Row(children: [
-                              const StudioWordmark(),
-                              const Spacer(),
-                              if (onBack != null)
-                                IconButton(
-                                    tooltip: 'Back',
-                                    onPressed: onBack,
-                                    icon: const Icon(Icons.arrow_back_rounded)),
-                            ])),
-                        const SizedBox(height: 36),
-                        if (wide)
-                          Row(
-                              crossAxisAlignment: CrossAxisAlignment.center,
-                              children: [
-                                const Expanded(child: _StudioSidePanel()),
-                                const SizedBox(width: 64),
-                                Expanded(
-                                    child: Align(
-                                        alignment: Alignment.centerRight,
-                                        child: form)),
-                              ])
-                        else
-                          Align(alignment: Alignment.topCenter, child: form),
-                        const SizedBox(height: 24),
-                      ]),
+                      const BoxConstraints(maxWidth: AppLayout.formWidth + 48),
+                  child: Padding(
+                    padding: EdgeInsets.symmetric(
+                        horizontal: constraints.maxWidth < 380
+                            ? AppSpacing.page
+                            : AppSpacing.lg,
+                        vertical: AppSpacing.lg),
+                    child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.stretch,
+                        children: [
+                          SizedBox(
+                              height: 48,
+                              child: Row(children: [
+                                const StudioWordmark(),
+                                const Spacer(),
+                                if (onBack != null)
+                                  IconButton(
+                                      tooltip: 'Back',
+                                      onPressed: onBack,
+                                      icon:
+                                          const Icon(Icons.arrow_back_rounded)),
+                              ])),
+                          SizedBox(height: compact ? AppSpacing.xl : 56),
+                          Text(title, style: theme.textTheme.headlineMedium),
+                          const SizedBox(height: AppSpacing.sm),
+                          Text(description, style: theme.textTheme.bodyLarge),
+                          const SizedBox(height: AppSpacing.xl),
+                          child,
+                        ]),
+                  ),
                 )),
-              ),
-            );
-          })),
-        );
+          );
+        })));
       }));
-}
-
-class _StudioSidePanel extends StatelessWidget {
-  const _StudioSidePanel();
-  @override
-  Widget build(BuildContext context) => Container(
-        padding: const EdgeInsets.all(32),
-        decoration: BoxDecoration(
-            color: PerformanceTheme.ink,
-            borderRadius: BorderRadius.circular(32)),
-        child: const Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Text('BUILT AROUND YOU',
-                  style: TextStyle(
-                      color: PerformanceTheme.lime,
-                      letterSpacing: 2,
-                      fontSize: 11,
-                      fontWeight: FontWeight.w700)),
-              SizedBox(height: 32),
-              Text('More intention.\nMore you.',
-                  style: TextStyle(
-                      color: Colors.white,
-                      fontSize: 42,
-                      height: 1.1,
-                      fontWeight: FontWeight.w800,
-                      letterSpacing: -1.5)),
-              SizedBox(height: 20),
-              Text(
-                  'A space for your movement, your meals, and the questions along the way.',
-                  style: TextStyle(
-                      color: Color(0xFFB9C0D3), height: 1.6, fontSize: 16)),
-              SizedBox(height: 24),
-              SizedBox(
-                  height: 240,
-                  width: double.infinity,
-                  child: MovementArtwork()),
-              SizedBox(height: 20),
-              Text('MOVE / FUEL / EVOLVE',
-                  style: TextStyle(
-                      color: Colors.white,
-                      letterSpacing: 2,
-                      height: 1.5,
-                      fontSize: 11,
-                      fontWeight: FontWeight.w600)),
-            ]),
-      );
 }
 
 class StudioField extends StatefulWidget {
@@ -304,10 +178,6 @@ class StudioButton extends StatelessWidget {
               Flexible(
                   child: Semantics(
                       liveRegion: true, child: Text(busy ? busyLabel : label))),
-              if (!busy) ...[
-                const SizedBox(width: 12),
-                const Icon(Icons.arrow_forward_rounded, size: 20)
-              ],
             ])),
       );
 }
@@ -325,7 +195,7 @@ class StudioNotice extends StatelessWidget {
           padding: const EdgeInsets.all(16),
           decoration: BoxDecoration(
               color: colors.errorContainer,
-              borderRadius: BorderRadius.circular(16)),
+              borderRadius: BorderRadius.circular(AppRadii.panel)),
           child: Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
             Icon(Icons.info_outline_rounded,
                 color: colors.onErrorContainer, size: 20),

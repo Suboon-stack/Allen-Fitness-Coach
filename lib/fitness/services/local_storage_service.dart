@@ -3,6 +3,8 @@ import 'package:shared_preferences/shared_preferences.dart';
 
 class LocalStorageService {
   static final LocalStorageService _instance = LocalStorageService._internal();
+
+  bool _workoutsNeedReload = false;
   factory LocalStorageService() => _instance;
   LocalStorageService._internal();
 
@@ -23,11 +25,29 @@ class LocalStorageService {
   // Workouts
   Future<void> saveWorkouts(List<Map<String, dynamic>> workouts) async {
     final prefs = await _prefs;
-    await prefs.setString('workouts', jsonEncode(workouts));
+    try {
+      final saved = await prefs.setString('workouts', jsonEncode(workouts));
+      if (!saved) throw StateError('Workout persistence was not confirmed');
+    } catch (_) {
+      // SharedPreferences changes its cache before the platform confirms a
+      // write. Never let an uncertain cached record masquerade as persisted.
+      _workoutsNeedReload = true;
+      try {
+        await prefs.reload();
+        _workoutsNeedReload = false;
+      } catch (_) {
+        // The next workout read must verify the platform state before use.
+      }
+      rethrow;
+    }
   }
 
   Future<List<Map<String, dynamic>>> getWorkouts() async {
     final prefs = await _prefs;
+    if (_workoutsNeedReload) {
+      await prefs.reload();
+      _workoutsNeedReload = false;
+    }
     final data = prefs.getString('workouts');
     return data != null
         ? List<Map<String, dynamic>>.from(jsonDecode(data))

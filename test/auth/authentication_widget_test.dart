@@ -71,8 +71,8 @@ void main() {
     await enter(tester, 'login-email', 'member@example.com');
     await enter(tester, 'login-password', 'a-password');
     repo.pendingLogin = Completer<AppUser?>();
-    await tester.ensureVisible(find.text('Sign in'));
-    await tester.tap(find.text('Sign in'));
+    await tester.ensureVisible(find.text('Sign In'));
+    await tester.tap(find.text('Sign In'));
     await tester.pump();
     expect(find.text('Signing in…'), findsOneWidget);
     expect(value(tester, 'login-email'), 'member@example.com');
@@ -84,10 +84,35 @@ void main() {
     expect(
         find.textContaining('Check your email and password.'), findsOneWidget);
     expect(value(tester, 'login-password'), 'a-password');
-    await tap(tester, 'Create an account');
+    await tap(tester, 'Sign up');
     await tap(tester, 'Sign in');
     expect(value(tester, 'login-email'), 'member@example.com');
     expect(value(tester, 'login-password'), 'a-password');
+  });
+
+  testWidgets(
+      'Login validates inline and remains usable with a small-screen keyboard',
+      (tester) async {
+    tester.view.physicalSize = const Size(320, 640);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+    addTearDown(tester.view.resetViewInsets);
+    await pumpGate(tester, scale: 2);
+    await tap(tester, 'Sign in');
+    await tap(tester, 'Sign In');
+    expect(find.text('Enter your email address.'), findsOneWidget);
+    expect(find.text('Enter your password.'), findsOneWidget);
+    expect(repo.loginCalls, 0);
+    await enter(tester, 'login-email', 'invalid-email');
+    await enter(tester, 'login-password', 'existing-password');
+    tester.view.viewInsets = const FakeViewPadding(bottom: 280);
+    await tester.pumpAndSettle();
+    await tap(tester, 'Sign In');
+    expect(find.text('Use an email like you@example.com.'), findsOneWidget);
+    expect(value(tester, 'login-password'), 'existing-password');
+    expect(repo.loginCalls, 0);
+    expect(tester.takeException(), isNull);
   });
 
   testWidgets('Registration validates fields and retains draft while switching',
@@ -106,7 +131,7 @@ void main() {
     expect(find.text('Use at least 6 characters.'), findsOneWidget);
     expect(find.text('Your passwords don’t match.'), findsOneWidget);
     await tap(tester, 'Sign in');
-    await tap(tester, 'Create an account');
+    await tap(tester, 'Sign up');
     expect(value(tester, 'register-name'), 'Alex');
     expect(value(tester, 'register-password'), '123');
   });
@@ -216,7 +241,7 @@ void main() {
     expect(find.text('Get started'), findsNothing);
     await tap(tester, 'Open account');
     await tap(tester, 'Sign out');
-    expect(find.text('Good to have\nyou back.'), findsOneWidget);
+    expect(find.text('Welcome back.'), findsOneWidget);
     expect(find.text('Open account'), findsNothing);
   });
 

@@ -124,10 +124,7 @@ class _HomePageState extends State<HomePage> {
   }
 
   @override
-  Widget build(BuildContext context) => Theme(
-        data: MediaQuery.platformBrightnessOf(context) == Brightness.dark
-            ? AppTheme.darkTheme
-            : AppTheme.lightTheme,
+  Widget build(BuildContext context) => AppThemeScope(
         child: Builder(builder: _buildDashboard),
       );
 
@@ -194,7 +191,8 @@ class _HomePageState extends State<HomePage> {
               padding: const EdgeInsets.fromLTRB(20, 8, 20, 16),
               child: Center(
                   child: ConstrainedBox(
-                constraints: const BoxConstraints(maxWidth: 720),
+                constraints:
+                    const BoxConstraints(maxWidth: AppLayout.contentWidth),
                 child: Column(
                     crossAxisAlignment: CrossAxisAlignment.stretch,
                     children: [

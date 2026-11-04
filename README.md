@@ -1,96 +1,94 @@
 # Allen — AI Fitness Coach
 
-**Status: Active Development — UI/UX Redesign & Functionality Improvements**
+**Status: Active Development — UI/UX Redesign and Functionality Improvements**
 
-Allen is a Flutter-based AI fitness application that brings workout planning, nutrition tools, progress tracking, and conversational guidance together. It is currently undergoing a screen-by-screen UI/UX redesign and targeted functionality improvements, with a focus on usability, maintainability, and reliability.
+Allen is a Flutter fitness application that brings workout planning, nutrition tools, progress tracking, and Gemini-powered guidance together. Development proceeds screen by screen, combining a consistent interface with targeted functionality repairs.
 
-## Project Overview
+## Overview
 
-Allen helps users create workout and meal plans, estimate nutrition from food photos, record activity, and ask a Gemini-powered fitness coach questions. Firebase handles authentication; fitness records currently persist locally on the device.
+Allen helps users plan and save workouts, track activity and weight, generate meal plans, estimate nutrition from food photos, and ask an AI fitness coach questions. Firebase handles authentication; fitness records currently persist locally on the device.
 
-The compact Home Dashboard has been reviewed and approved after testing on an Android phone. That approval covers its UI; remaining feature and live-service verification is tracked separately.
+The owner has reviewed and approved the latest Midnight Navy + Electric Blue UI on an Android phone, including the refined Welcome screen. UI approval does not establish complete live-service or persistence verification.
 
-## Technologies
+## Tech Stack
 
-| Area | Implementation |
+| Area | Technologies |
 | --- | --- |
 | Application | Flutter, Dart, Material 3 |
-| Authentication | Firebase Authentication and `firebase_core` |
-| State management | `flutter_bloc` / `AuthCubit`; widget-local state for fitness screens |
+| Authentication | Firebase Authentication, Firebase Core |
+| State management | Bloc/Cubit for authentication; widget-local state for fitness screens |
 | AI integration | Google Gemini API over HTTP, including food-image analysis |
-| Persistence | SharedPreferences through local services and repositories |
-| Device tools | `image_picker`, `flutter_local_notifications`, `path_provider` |
-| Charts and utilities | `fl_chart`, `intl`, `uuid` |
-| Tests | `flutter_test`, repository test doubles, SharedPreferences test storage |
+| Local persistence | SharedPreferences, local services and repositories |
+| Device capabilities | Image Picker, Flutter Local Notifications, Path Provider |
+| Charts and utilities | FL Chart, Intl, UUID |
+| Testing | Flutter Test, mock HTTP responses, isolated preference storage |
 
-Cloud Firestore is a dependency and appears in model serializers, but the current fitness repositories use **local storage**, not Firestore synchronization.
+Cloud Firestore is a dependency and appears in model serializers; current fitness repositories use local storage rather than Firestore synchronization.
 
 ## Features
 
-| Feature | Current status |
+| Feature | Implementation and verification |
 | --- | --- |
-| Home Dashboard | Redesigned and UI-approved on Android. Repository-backed workout, weight, streak, and water summaries; coach entry; feature shortcuts; refresh and recovery states. Covered by widget/regression tests. |
-| Authentication | Email/password registration, login, password reset, session restoration, logout, and account deletion are implemented. State-recovery tests pass; live Firebase flows still require integration verification. |
-| AI Coach | Gemini conversation with in-session history is implemented; improved response formatting, error handling, and retry UX remain planned. |
-| Workout planning | Generation, saving, and history are implemented. Completion has a confirmed identifier bug; parsing needs hardening. |
-| Nutrition | Meal generation, meal logging, nutrition summaries, and water logging are implemented. Further reliability and device verification remain pending. |
-| Food analysis | Camera/gallery selection, image preview, and Gemini nutrition estimates are implemented. Error/result handling needs improvement. |
+| Authentication | Email/password registration, login, password reset, session restoration, logout, and account deletion. Automated state/validation coverage; live Firebase flows require further verification. |
+| Home Dashboard | Compact activity summaries, feature shortcuts, coach entry, bottom navigation, refresh and recovery states. UI approved on Android; summaries use existing repositories. |
+| Workout Planner | Focus, difficulty and duration preferences; Gemini generation; compact exercise details; save and completion actions. Explicit generation failures and retry replace silent workout fallbacks. |
+| Saved Workouts | Ready/completed filters, expandable details, completion, and confirmed deletion. UUID, duplicate-action and persistence-failure regression tests; full device/restart verification remains pending. |
+| Nutrition | Meal generation, meal logging, nutrition summaries, and water logging are implemented. Redesign and reliability verification are upcoming. |
+| Food analysis | Camera/gallery selection and Gemini nutrition estimates are implemented. Error/result handling needs improvement. |
+| AI Coach | Gemini conversation and in-session history are implemented. Interface and error handling improvements are upcoming. |
 | Progress | Weight logging, charts, and activity summaries are implemented. Weight deletion and account data separation have known limitations. |
-| Profile and settings | Profile editing, BMI, nutrition targets, JSON export, and account controls are implemented. Further redesign and verification remain pending. |
+| Profile and Settings | Profile editing, BMI, nutrition targets, JSON export, and account controls are implemented; redesign and further verification are upcoming. |
 | Reminders | Immediate notifications and an enable preference exist; recurring daily scheduling is not implemented. |
 
-“Implemented” describes code present in the repository, not a claim that every live service or device flow has been verified.
-
-## Current Development
-
-- Modernizing the application's UI/UX.
-- Building a consistent design system.
-- Improving navigation and responsive layouts.
-- Redesigning individual feature screens.
-- Investigating and fixing functionality issues.
-- Improving error handling and application reliability.
-- Adding relevant tests.
-- Documenting the UI/UX design process.
+“Implemented” describes code present, not a guarantee that every device or live-service flow is verified. AI output requires user judgment.
 
 ## UI/UX Redesign Progress
 
-- [x] **Home Dashboard:** compact redesign approved after Android UI testing; remaining functionality verification is tracked separately.
-- [ ] **Authentication:** initial intro, login, registration, and reset redesign implemented; further login refinement, final review, and live Firebase verification remain pending.
-- [ ] **Workout Planner:** pending redesign.
-- [ ] **Nutrition:** pending redesign.
-- [ ] **AI Coach:** pending redesign.
-- [ ] **Progress:** pending redesign.
-- [ ] **Profile and Settings:** pending redesign.
+- [x] **Welcome Screen** — redesigned; custom blue movement graphic and capitalized Allen wordmark.
+- [x] **Login and Registration** — redesigned, including shared password-reset styling; further live authentication verification remains pending.
+- [x] **Home Dashboard** — redesigned; compact layout, two-column statistics, and navigation retained.
+- [x] **Workout Planner** — redesigned; generation, saving, completion, and failure handling have automated coverage.
+- [x] **Saved Workouts** — redesigned, pending full functionality verification on device.
+- [ ] **Nutrition** — upcoming.
+- [ ] **AI Coach** — upcoming.
+- [ ] **Progress** — upcoming.
+- [ ] **Profile and Settings** — upcoming.
 
-Home retains forest-green/mint themes. Authentication has a separate Performance Studio visual language while the design system is being refined. Other feature pages retain their existing presentation until reviewed individually.
+Checked entries indicate implemented, owner-approved UI rather than completion of the entire feature. Reviewed screens share a centralized Midnight Navy + Electric Blue Material 3 design system. Other routes retain their earlier styling until their own milestone.
 
-See the [dashboard design decisions](docs/ui-ux/dashboard-refinement.md), [separate dashboard repairs](docs/ui-ux/dashboard-data-fixes.md), and [UI/UX documentation index](docs/ui-ux/README.md).
+See the [design system](docs/ui-ux/midnight-theme.md), [workout repair notes](docs/ui-ux/workout-repairs.md), and [UI/UX documentation index](docs/ui-ux/README.md). Design decisions are based on the owner brief and code inspection; no user research or usability-study results are claimed.
+
+## Current Development
+
+- Consistent UI/UX design and reusable components.
+- Improving Flutter architecture within the existing Cubit/repository structure.
+- Better navigation and responsive layouts.
+- Targeted functionality repairs and clearer errors.
+- Gemini API reliability and response validation.
+- Data persistence and account data separation.
+- Automated testing, accessibility, and device verification.
 
 ## Screenshots
 
-A screenshot of the **approved compact Home Dashboard** has not yet been added. Place an actual Android capture at:
+Genuine captures of earlier application versions are available under [`docs/screenshots/`](docs/screenshots/) and [`docs/ui-ux/screenshots/`](docs/ui-ux/screenshots/). They are historical references, not screenshots of the approved Midnight UI.
 
-```text
-docs/screenshots/approved/home-dashboard.png
-```
+Current Midnight screenshots have not been added. Place actual Android captures in `docs/ui-ux/screenshots/`, for example `welcome-motion-midnight.png`, `midnight-home.png`, `midnight-workout-plan.png`, and `midnight-saved-workouts.png`. Follow the [screenshot checklist](docs/ui-ux/screenshot-checklist.md), record the device/build, and remove personal information. No mockups or AI-generated images are used as implementation evidence.
 
-[Capture guidance](docs/screenshots/approved/README.md) explains what to include. The existing `docs/screenshots/home.png` shows an earlier dashboard and is not presented as the current approved design. No mockups or AI-generated images are used as proof of implementation.
+## Known Issues
 
-## Known Issues / Planned Improvements
+- Local fitness/profile data is not consistently isolated per account. A separate ownership/migration plan is needed; this milestone does not migrate or delete records.
+- Weight records lack stable IDs for reliable individual deletion; the Settings clear-weight action also uses a legacy storage path.
+- Meal-generation and quote failures can still use predefined fallbacks. Workout generation now reports failures explicitly; other AI flows need further review.
+- Recurring daily reminders are not implemented.
+- The registration name is collected but not persisted by the authentication repository.
+- Workout history retains the existing latest-50 limit. Live Gemini output, real app-restart persistence, TalkBack, and full authentication flows need further device verification.
+- Full-project analysis reports existing diagnostics in unreviewed nutrition/profile/progress/settings code. Current milestone validation is recorded in the [release review](docs/ui-ux/approved-midnight-milestone.md).
 
-- Workout completion passes an exercise name where the repository expects a saved workout ID.
-- Weight records lack the stable IDs needed for reliable individual deletion. The settings weight-clear action also targets a legacy storage path.
-- Local fitness/profile data is not consistently isolated per account. Any migration or ownership change needs a separate plan; this milestone does not delete or migrate records.
-- Gemini workout/meal errors can silently produce predefined fallback plans. Workout parsing and food-analysis error presentation need hardening.
-- Daily reminders currently show notifications immediately rather than scheduling recurring delivery.
-- The registration name is collected but is not yet persisted by the authentication repository.
-- Remaining feature screens need responsive UI, asynchronous-state, accessibility, and live-service verification. Full-project analysis still reports existing diagnostics in those files.
-
-The dashboard's legacy-statistics-source mismatch and quote-blocked activity loading have been corrected. Those repairs have regression coverage and are documented separately from the UI changes.
+The dashboard statistics-source mismatch and workout completion UUID bug have targeted fixes and regression coverage. Their root causes and scope are documented separately from visual decisions.
 
 ## Getting Started
 
-Android is the current build/review target. Use a recent Flutter SDK with Dart 3, an Android SDK and device/emulator, and a compatible Java toolchain (the Android project targets Java 17). Firebase CLI and FlutterFire CLI are needed to configure your own Firebase project.
+Android is the current build/review target. Install Flutter with a compatible Dart 3 SDK, Android SDK, and Java 17 toolchain. The Firebase CLI and FlutterFire CLI are needed to configure your own Firebase project.
 
 ```bash
 git clone https://github.com/Suboon-stack/Allen-Fitness-Coach.git
@@ -100,8 +98,8 @@ flutter doctor
 flutter pub get
 ```
 
-1. Create or select a Firebase project and enable **Email/Password** in Firebase Authentication. Configure its Android app for the current application ID, `com.example.allen`.
-2. Configure Firebase using your own account/project:
+1. Create a Firebase project, enable **Email/Password** authentication, and register the Android application ID `com.example.allen`.
+2. Configure your project:
 
    ```bash
    dart pub global activate flutterfire_cli
@@ -109,32 +107,32 @@ flutter pub get
    flutterfire configure --platforms=android
    ```
 
-   Ensure `lib/firebase_options.dart` and `android/app/google-services.json` contain your project's configuration. Sanitized examples are provided in `lib/firebase_options.example.dart` and `android/app/google-services.example.json`; the examples alone do not connect to Firebase.
-3. Create the local Gemini configuration:
+   Ensure `lib/firebase_options.dart` and `android/app/google-services.json` contain your project configuration. Sanitized examples are provided as `lib/firebase_options.example.dart` and `android/app/google-services.example.json`; examples alone do not connect to Firebase.
+3. Create local Gemini configuration:
 
    ```bash
    cp lib/secrets.example.dart lib/secrets.dart
    ```
 
-   Replace the placeholder with your own Gemini API key. Keep real keys and project-specific configuration out of commits. The local files above are git-ignored. The current client calls Gemini directly; stronger API-key protection is a planned production-hardening task.
-4. Run on Android:
+   Replace the placeholder with your own Gemini API key. Real credentials and local project configuration are git-ignored and must remain uncommitted. Gemini requests currently originate in the client; stronger key protection remains a production-hardening task.
+4. Connect an Android device or start an emulator:
 
    ```bash
    flutter devices
    flutter run -d <android-device-id>
    ```
 
-For checks and a local debug build:
+Validation and local debug build:
 
 ```bash
-dart format lib/fitness/pages/home_page.dart lib/fitness/theme/app_theme.dart lib/fitness/widgets/allen_components.dart lib/main.dart test/widget_test.dart
+dart format lib test
 flutter analyze
 flutter test
 flutter build apk --debug
 ```
 
-Tests use test doubles and local test storage; they do not establish live Firebase login or Gemini availability. See [dashboard validation notes](docs/ui-ux/dashboard-refinement.md) for the milestone's executed checks and remaining manual checks.
+Tests use test doubles and isolated storage; they do not prove live Firebase/Gemini availability or exercise real user records. See the [milestone review](docs/ui-ux/approved-midnight-milestone.md) for actual results and remaining manual checks.
 
 ## Development Notes
 
-Allen is being improved as a Flutter development and UI/UX portfolio project. Work proceeds through reviewable screen-level milestones, preserving the existing Cubit/repository architecture and documenting confirmed defects separately from presentation decisions. The goal is to demonstrate practical Flutter engineering, API integration, testing, and thoughtful interface design without overstating completion or inventing research results.
+Allen is being improved as a Flutter development and UI/UX portfolio project. Reviewable screen-level milestones demonstrate practical UI implementation, API integration, state management, persistence, testing, and documented design decisions while preserving existing user data and accurately reporting remaining work.

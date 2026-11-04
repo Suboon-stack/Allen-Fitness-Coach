@@ -1,10 +1,19 @@
+import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
 
 import 'package:allen/secrets.dart';
+import 'package:allen/fitness/services/workout_plan_parser.dart';
 import 'package:http/http.dart' as http;
 
 class AiService {
+  AiService(
+      {http.Client? client,
+      Duration workoutTimeout = const Duration(seconds: 30)})
+      : _client = client,
+        _workoutTimeout = workoutTimeout;
+  final http.Client? _client;
+  final Duration _workoutTimeout;
   final List<Map<String, dynamic>> _chatHistory = [];
 
   // System prompt — makes Gemini act as fitness coach
@@ -61,52 +70,20 @@ Use emojis occasionally to keep it engaging.'''
     required String difficulty,
     required String duration,
   }) async {
-    try {
-      final prompt = '''
+    final prompt = '''
 Create a $difficulty $duration workout plan focused on $muscleGroup.
 
-Format your response EXACTLY like this with no extra text:
+Return 5-6 exercises, with one exercise per line and no introductory text:
 EXERCISE_NAME | SETS x REPS | MUSCLE
-EXERCISE_NAME | SETS x REPS | MUSCLE
-(list 5-6 exercises)
+You may append a fourth field with rest or instructions when useful.
+Use positive integer sets and repetitions only. Do not use ranges or timed holds;
+choose a repetition-based exercise instead. Do not invent equipment preferences.
 
 Example:
 Bench Press | 4 x 10 | Chest
 Push Ups | 3 x 15 | Chest
 ''';
-      final result = await _callGemini(prompt, useHistory: false);
-
-      if (result.contains('quota') ||
-          result.contains('rate limit') ||
-          result.contains('429') ||
-          result.contains('Error:')) {
-        return _getFallbackWorkout(muscleGroup);
-      }
-
-      return result;
-    } catch (e) {
-      return _getFallbackWorkout(muscleGroup);
-    }
-  }
-
-  String _getFallbackWorkout(String muscleGroup) {
-    final workouts = {
-      'Chest':
-          'Bench Press | 4 x 10 | Chest\nPush Ups | 3 x 15 | Chest\nIncline Press | 3 x 12 | Chest\nCable Fly | 3 x 12 | Chest\nDips | 3 x 10 | Chest',
-      'Back':
-          'Pull Ups | 3 x 10 | Back\nBarbell Row | 3 x 10 | Back\nLat Pulldown | 3 x 12 | Back\nDeadlift | 3 x 8 | Back\nSeated Row | 3 x 12 | Back',
-      'Legs':
-          'Squats | 4 x 10 | Legs\nLunges | 3 x 12 | Legs\nLeg Press | 3 x 12 | Legs\nLeg Curl | 3 x 12 | Legs\nCalf Raise | 4 x 15 | Legs',
-      'Arms':
-          'Barbell Curl | 3 x 10 | Arms\nTricep Dips | 3 x 12 | Arms\nHammer Curl | 3 x 12 | Arms\nSkull Crushers | 3 x 12 | Arms\nPreacher Curl | 3 x 10 | Arms',
-      'Shoulders':
-          'Overhead Press | 4 x 10 | Shoulders\nLateral Raise | 3 x 12 | Shoulders\nFront Raise | 3 x 12 | Shoulders\nFace Pull | 3 x 12 | Shoulders\nRear Delt Fly | 3 x 12 | Shoulders',
-      'Core':
-          'Plank | 3 x 60s | Core\nCrunches | 3 x 20 | Core\nLeg Raises | 3 x 15 | Core\nRussian Twist | 3 x 20 | Core\nMountain Climbers | 3 x 30 | Core',
-      'Full Body':
-          'Burpees | 3 x 10 | Full Body\nPush Ups | 3 x 15 | Full Body\nSquats | 3 x 15 | Full Body\nPull Ups | 3 x 8 | Full Body\nPlank | 3 x 45s | Full Body',
-    };
-    return workouts[muscleGroup] ?? workouts['Full Body']!;
+    return _callGemini(prompt, useHistory: false, strictWorkout: true);
   }
 
   // ── Generate meal plan ────────────────────────────────────────
@@ -195,7 +172,8 @@ Lunch | Grilled Chicken + Rice | 620 kcal | 45g protein
   }
 
   // ── Internal Gemini call ──────────────────────────────────────
-  Future<String> _callGemini(String prompt, {bool useHistory = true}) async {
+  Future<String> _callGemini(String prompt,
+      {bool useHistory = true, bool strictWorkout = false}) async {
     if (prompt.trim().isEmpty) return 'Please enter a message.';
 
     const model = 'gemini-2.5-flash-lite';
@@ -221,16 +199,20 @@ Lunch | Grilled Chicken + Rice | 620 kcal | 45g protein
     });
 
     try {
-      final res = await http.post(
+      final request = (_client?.post ?? http.post)(
         uri,
         headers: {'Content-Type': 'application/json'},
         body: jsonEncode({'contents': contents}),
       );
+      final res = strictWorkout
+          ? await request.timeout(_workoutTimeout)
+          : await request;
 
       if (res.statusCode == 200) {
         final data = jsonDecode(res.body);
-        final text =
-            data['candidates'][0]['content']['parts'][0]['text'] as String;
+        final text = strictWorkout
+            ? _workoutText(data)
+            : data['candidates'][0]['content']['parts'][0]['text'] as String;
 
         if (useHistory) {
           _chatHistory.add({
@@ -249,12 +231,61 @@ Lunch | Grilled Chicken + Rice | 620 kcal | 45g protein
 
         return text.trim();
       } else {
+        if (strictWorkout) {
+          if (res.statusCode == 429) {
+            throw const WorkoutGenerationException(
+                'Allen’s workout request limit has been reached. Please try again later.');
+          }
+          throw const WorkoutGenerationException(
+              'Workout generation is unavailable right now. Please try again shortly.');
+        }
         final error = jsonDecode(res.body);
         return 'Error: ${error['error']['message'] ?? 'Something went wrong'}';
       }
     } catch (e) {
+      if (strictWorkout) {
+        if (e is WorkoutGenerationException) rethrow;
+        if (e is TimeoutException) {
+          throw const WorkoutGenerationException(
+              'Allen took too long to respond. Please try again.');
+        }
+        if (e is FormatException) {
+          throw const WorkoutGenerationException(
+              'Allen returned an unreadable response. Please try again.');
+        }
+        throw const WorkoutGenerationException(
+            'Couldn’t reach Allen. Check your connection and try again.');
+      }
       return 'Error: ${e.toString()}';
     }
+  }
+
+  String _workoutText(dynamic data) {
+    if (data is Map &&
+        data['candidates'] is List &&
+        (data['candidates'] as List).isNotEmpty) {
+      final candidate = (data['candidates'] as List).first;
+      if (candidate is Map &&
+          candidate['finishReason'] != null &&
+          candidate['finishReason'] != 'STOP') {
+        throw const WorkoutGenerationException(
+            'Allen couldn’t finish this workout. Please try again.');
+      }
+      if (candidate is Map && candidate['content'] is Map) {
+        final parts = candidate['content']['parts'];
+        if (parts is List) {
+          final text = parts
+              .whereType<Map>()
+              .map((part) => part['text'])
+              .whereType<String>()
+              .join('\n')
+              .trim();
+          if (text.isNotEmpty) return text;
+        }
+      }
+    }
+    throw const WorkoutGenerationException(
+        'Allen could not return a workout for this request. Try again or choose another focus.');
   }
 
   void clearHistory() {

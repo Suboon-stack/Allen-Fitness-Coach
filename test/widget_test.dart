@@ -158,7 +158,7 @@ void main() {
       await tester.pumpAndSettle();
       expect(tester.takeException(), isNull);
       expect(Theme.of(tester.element(find.byType(Scaffold).first)).brightness,
-          brightness);
+          Brightness.dark);
       await tester.ensureVisible(find.text('Scan food'));
       expect(tester.takeException(), isNull);
     });
@@ -188,6 +188,24 @@ void main() {
       await tester.tap(find.text(entry.key));
       await tester.pumpAndSettle();
       expect(find.byType(entry.value), findsOneWidget);
+      final destinationTheme =
+          Theme.of(tester.element(find.byType(entry.value)));
+      // The reviewed screen applies its scope inside its root; inspect its
+      // Scaffold. Unreviewed destinations continue using the legacy route theme.
+      final scaffold = find
+          .descendant(
+              of: find.byType(entry.value), matching: find.byType(Scaffold))
+          .first;
+      final routeTheme = Theme.of(tester.element(scaffold));
+      expect(
+          routeTheme.colorScheme.surface,
+          entry.value == WorkoutPage
+              ? AppColors.surface
+              : destinationTheme.colorScheme.surface);
+      if (entry.value != WorkoutPage) {
+        expect(routeTheme.colorScheme.surface,
+            AppTheme.legacyTheme.colorScheme.surface);
+      }
       await tester.tap(find.byTooltip('Back'));
       await tester.pumpAndSettle();
       expect(find.text('Ask Allen'), findsOneWidget);

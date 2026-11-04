@@ -1,13 +1,14 @@
 import 'package:flutter/material.dart';
+import 'package:allen/fitness/theme/design_tokens.dart';
 
 /// Shared spacing tokens for the redesigned presentation layer.
 abstract final class AllenSpacing {
-  static const double xs = 4;
-  static const double sm = 8;
-  static const double md = 16;
-  static const double lg = 24;
-  static const double xl = 32;
-  static const double maxContentWidth = 1040;
+  static const double xs = AppSpacing.xs;
+  static const double sm = AppSpacing.sm;
+  static const double md = AppSpacing.md;
+  static const double lg = AppSpacing.lg;
+  static const double xl = AppSpacing.xl;
+  static const double maxContentWidth = AppLayout.wideWidth;
 }
 
 class AllenCard extends StatelessWidget {
@@ -26,7 +27,7 @@ class AllenCard extends StatelessWidget {
     return Material(
       color: colors.surface,
       shape: RoundedRectangleBorder(
-          borderRadius: BorderRadius.circular(20),
+          borderRadius: BorderRadius.circular(AppRadii.panel),
           side: BorderSide(color: colors.outlineVariant)),
       clipBehavior: Clip.antiAlias,
       child:
@@ -93,7 +94,7 @@ class AllenMetricGrid extends StatelessWidget {
     return Container(
       decoration: BoxDecoration(
           color: theme.colorScheme.surface,
-          borderRadius: BorderRadius.circular(12),
+          borderRadius: BorderRadius.circular(AppRadii.panel),
           border: Border.all(color: theme.colorScheme.outlineVariant)),
       child: LayoutBuilder(builder: (context, constraints) {
         final columns = constraints.maxWidth < 360 &&
