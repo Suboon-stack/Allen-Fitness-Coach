@@ -2,6 +2,7 @@ import 'dart:async';
 import 'package:allen/features/auth/presentation/cubits/auth_cubit.dart';
 import 'package:allen/features/auth/presentation/cubits/auth_state.dart';
 import 'package:allen/fitness/models/meal_model.dart';
+import 'package:allen/fitness/models/food_estimate.dart';
 import 'package:allen/fitness/models/nutrition_tracker_data.dart';
 import 'package:allen/fitness/repositories/meal_repository.dart';
 import 'package:allen/fitness/repositories/progress_repository.dart';
@@ -391,6 +392,13 @@ class _MealPlannerPageState extends State<MealPlannerPage>
                     const SizedBox(height: AppSpacing.xs),
                     Text(_todayMeals[i].name,
                         style: theme.textTheme.titleMedium),
+                    if (_todayMeals[i]
+                            .notes
+                            ?.startsWith(FoodEstimate.notePrefix) ??
+                        false)
+                      Text('AI Estimate · reviewed',
+                          style: theme.textTheme.bodySmall
+                              ?.copyWith(color: theme.colorScheme.secondary)),
                     const SizedBox(height: AppSpacing.xs),
                     Text(
                         '${trackerNumber(_todayMeals[i].calories)} kcal · ${trackerNumber(_todayMeals[i].protein)} g protein'),
