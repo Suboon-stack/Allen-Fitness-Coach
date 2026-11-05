@@ -3,6 +3,7 @@ import 'dart:convert';
 import 'dart:io';
 
 import 'package:allen/secrets.dart';
+import 'gemini_chat_session.dart';
 import 'package:allen/fitness/services/workout_plan_parser.dart';
 import 'package:allen/fitness/services/meal_plan_parser.dart';
 import 'package:http/http.dart' as http;
@@ -11,14 +12,21 @@ class AiService {
   AiService(
       {http.Client? client,
       Duration workoutTimeout = const Duration(seconds: 30),
-      Duration mealTimeout = const Duration(seconds: 30)})
+      Duration mealTimeout = const Duration(seconds: 30),
+      Duration chatTimeout = const Duration(seconds: 30)})
       : _client = client,
         _workoutTimeout = workoutTimeout,
-        _mealTimeout = mealTimeout;
+        _mealTimeout = mealTimeout,
+        _chatTimeout = chatTimeout;
   final http.Client? _client;
   final Duration _workoutTimeout;
   final Duration _mealTimeout;
-  final List<Map<String, dynamic>> _chatHistory = [];
+  final Duration _chatTimeout;
+  late final GeminiChatSession _chatSession = GeminiChatSession(
+      apiKey: geminiAPIKey,
+      client: _client,
+      timeout: _chatTimeout,
+      prefix: [_systemPrompt, _systemResponse]);
 
   // System prompt — makes Gemini act as fitness coach
   final Map<String, dynamic> _systemPrompt = {
@@ -52,21 +60,7 @@ Use emojis occasionally to keep it engaging.'''
   };
 
   // ── Chat ──────────────────────────────────────────────────────
-  Future<String> chat(String prompt) async {
-    try {
-      final result = await _callGemini(prompt, useHistory: true);
-
-      if (result.contains('quota') ||
-          result.contains('rate limit') ||
-          result.contains('429')) {
-        return 'Sorry, I\'ve reached my daily limit. Please try again later! 💪';
-      }
-
-      return result;
-    } catch (e) {
-      return 'Oops! Something went wrong. Please try again! 😅';
-    }
-  }
+  Future<String> chat(String prompt) => _chatSession.send(prompt);
 
   // ── Generate workout plan ─────────────────────────────────────
   Future<String> generateWorkout({
@@ -87,7 +81,7 @@ Example:
 Bench Press | 4 x 10 | Chest
 Push Ups | 3 x 15 | Chest
 ''';
-    return _callGemini(prompt, useHistory: false, strictWorkout: true);
+    return _callGemini(prompt, strictWorkout: true);
   }
 
   // ── Generate meal plan ────────────────────────────────────────
@@ -106,7 +100,7 @@ MEAL_TIME | MEAL_NAME | CALORIES | PROTEIN | CARBS | FAT
 Calories must be a positive integer in kcal. Macros must be nonnegative grams.
 Nutrition values are estimates. Do not claim medical or personalized dietary advice.
 """;
-    return _callGemini(prompt, useHistory: false, strictMeal: true);
+    return _callGemini(prompt, strictMeal: true);
   }
 
   // ── Generate daily quote ──────────────────────────────────────
@@ -114,7 +108,7 @@ Nutrition values are estimates. Do not claim medical or personalized dietary adv
     try {
       const prompt =
           'Give me one short motivational fitness quote. Just the quote and author, nothing else. Format: "quote" - Author';
-      final result = await _callGemini(prompt, useHistory: false);
+      final result = await _callGemini(prompt);
 
       // Check for quota or API errors
       if (result.contains('quota') ||
@@ -148,9 +142,7 @@ Nutrition values are estimates. Do not claim medical or personalized dietary adv
 
   // ── Internal Gemini call ──────────────────────────────────────
   Future<String> _callGemini(String prompt,
-      {bool useHistory = true,
-      bool strictWorkout = false,
-      bool strictMeal = false}) async {
+      {bool strictWorkout = false, bool strictMeal = false}) async {
     final strict = strictWorkout || strictMeal;
     final kind = strictMeal ? 'meal plan' : 'workout';
     Exception failure(String message) => strictMeal
@@ -168,10 +160,6 @@ Nutrition values are estimates. Do not claim medical or personalized dietary adv
       _systemPrompt,
       _systemResponse,
     ];
-
-    if (useHistory) {
-      contents.addAll(_chatHistory);
-    }
 
     contents.add({
       'role': 'user',
@@ -195,21 +183,6 @@ Nutrition values are estimates. Do not claim medical or personalized dietary adv
         final text = strict
             ? _planText(data, kind: kind, failure: failure)
             : data['candidates'][0]['content']['parts'][0]['text'] as String;
-
-        if (useHistory) {
-          _chatHistory.add({
-            'role': 'user',
-            'parts': [
-              {'text': prompt.trim()}
-            ],
-          });
-          _chatHistory.add({
-            'role': 'model',
-            'parts': [
-              {'text': text}
-            ],
-          });
-        }
 
         return text.trim();
       } else {
@@ -272,7 +245,7 @@ Nutrition values are estimates. Do not claim medical or personalized dietary adv
   }
 
   void clearHistory() {
-    _chatHistory.clear();
+    _chatSession.reset();
   }
 
   Future<String> analyzeFood(File imageFile) async {
