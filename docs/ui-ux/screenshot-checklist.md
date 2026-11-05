@@ -63,3 +63,7 @@ At the Planner-stage checkpoint, only Planner and the shared shell used Midnight
 ## Circular Nutrition and Water — feature approved; captures pending
 
 The owner requested both trackers after the Planner stage. [Capture/checklist details](nutrition-water-trackers.md#screenshot-checklist): recorded totals, no-goal state, manual entry/keyboard/validation, Water default-goal/quick-add states, large text and recovery. The owner has approved the feature and authorized branch publication. All new captures remain pending. Earlier Nutrition screenshots are before references; no additional process-restart, accessibility or live-service test result is claimed. See the [approved milestone](approved-nutrition-milestone.md).
+
+## AI Coach Chat — UI/UX approved; captures pending
+
+Capture the original sparkle/header, empty suggestions, real conversation formatting, pending send, sanitized retry, and small-screen keyboard/large-text states. [Detailed checklist](ai-coach-redesign.md#screenshot-checklist). The owner has tested and approved the UI/UX on Android. Actual capture files remain pending; no additional test results are claimed. Use actual Android renders and remove personal text; fixtures/mockups do not establish live Gemini functionality.

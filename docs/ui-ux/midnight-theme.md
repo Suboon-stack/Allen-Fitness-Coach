@@ -113,3 +113,9 @@ Nutrition Stage 1 now applies the same AppThemeScope to its app bar/tabs and Pla
 The later owner-requested [Nutrition and Water stage](nutrition-water-trackers.md) replaces the legacy Tracker/Water content described above. All three Nutrition tabs now share Midnight. Rings, form controls, summaries, feedback and loading states reuse existing tokens; no centralized palette changes were needed. Planner presentation and other routes are unchanged in this stage.
 
 The owner has since approved the combined Nutrition feature and authorized publication on the existing redesign branch. See the [Nutrition milestone](approved-nutrition-milestone.md); the earlier staged scope/results above are retained as design history.
+
+## AI Coach Chat extension — Android UI/UX approved
+
+The local `feature/ai-coach-redesign` milestone applies AppThemeScope to Chat only. Original soft-blue four-point sparkle, navy header/replies, primary-blue user bubbles, a Material composer/send control and typed error/loading states reuse existing tokens. No central palette or other screen changes are needed. See [AI Coach design and component specifications](ai-coach-redesign.md).
+
+The owner has tested and approved this Chat UI/UX on Android and authorized publication to the feature branch. Main remains unchanged until separate merge approval. [Current validation](approved-ai-coach-milestone.md) records actual checks and remaining limitations.

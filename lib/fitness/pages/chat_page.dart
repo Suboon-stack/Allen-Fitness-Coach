@@ -1,238 +1,342 @@
-import 'package:allen/pallete.dart';
+import 'dart:math' as math;
+import 'package:allen/features/auth/presentation/cubits/auth_cubit.dart';
+import 'package:allen/features/auth/presentation/cubits/auth_state.dart';
+import 'package:allen/fitness/controllers/chat_controller.dart';
+import 'package:allen/fitness/models/chat_message.dart';
 import 'package:allen/fitness/services/ai_service.dart';
+import 'package:allen/fitness/services/gemini_chat_session.dart';
+import 'package:allen/fitness/theme/app_theme.dart';
+import 'package:allen/fitness/widgets/chat_widgets.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter_bloc/flutter_bloc.dart';
 
 class ChatPage extends StatefulWidget {
-  const ChatPage({super.key});
-
+  const ChatPage({super.key, this.aiService});
+  final AiService? aiService;
   @override
   State<ChatPage> createState() => _ChatPageState();
 }
 
-class _ChatPageState extends State<ChatPage> {
-  final TextEditingController _controller = TextEditingController();
-  final ScrollController _scrollController = ScrollController();
-  final AiService _aiService = AiService();
-  final List<Map<String, dynamic>> _messages = [];
-  bool _isLoading = false;
+class _ChatPageState extends State<ChatPage> with WidgetsBindingObserver {
+  final _input = TextEditingController();
+  final _scroll = ScrollController();
+  late final ChatController _chat;
+  bool _nearBottom = true, _following = false, _followScheduled = false;
+  String? _composerError;
+
+  String? _verifiedUser() {
+    final auth = context.read<AuthCubit>();
+    final state = auth.state;
+    if (state is AuthLoading || state is AuthError && state.sessionUnresolved) {
+      return null;
+    }
+    return auth.currentUser?.uid;
+  }
 
   @override
   void initState() {
     super.initState();
-    // Welcome message
-    _messages.add({
-      'text':
-          'Hey! I\'m Allen, your AI fitness coach 💪 Ask me anything about workouts, nutrition, or your fitness goals!',
-      'isUser': false,
+    _chat = ChatController(
+        service: widget.aiService ?? AiService(), userId: _verifiedUser())
+      ..addListener(_conversationChanged);
+    _input.addListener(_draftChanged);
+    _scroll.addListener(_trackScroll);
+    WidgetsBinding.instance.addObserver(this);
+  }
+
+  void _conversationChanged() {
+    if (mounted) {
+      setState(() {});
+      _scheduleFollow();
+    }
+  }
+
+  void _draftChanged() {
+    if (_composerError != null &&
+        _input.text.trim().length <= GeminiChatSession.maxPromptCharacters) {
+      setState(() => _composerError = null);
+    }
+    _scheduleFollow();
+  }
+
+  void _trackScroll() {
+    if (!_following && _scroll.hasClients) {
+      _nearBottom = _scroll.position.extentAfter <= 96;
+    }
+  }
+
+  void _scheduleFollow() {
+    if (!_nearBottom || _followScheduled) return;
+    _followScheduled = true;
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      _followScheduled = false;
+      if (!mounted || !_nearBottom || !_scroll.hasClients) return;
+      _following = true;
+      _scroll.jumpTo(_scroll.position.maxScrollExtent);
+      _following = false;
     });
   }
 
-  void _scrollToBottom() {
-    Future.delayed(const Duration(milliseconds: 100), () {
-      if (_scrollController.hasClients) {
-        _scrollController.animateTo(
-          _scrollController.position.maxScrollExtent,
-          duration: const Duration(milliseconds: 300),
-          curve: Curves.easeOut,
-        );
-      }
-    });
+  @override
+  void didChangeMetrics() {
+    _scheduleFollow();
   }
 
-  Future<void> _sendMessage() async {
-    final text = _controller.text.trim();
-    if (text.isEmpty) return;
+  void _send() {
+    if (ModalRoute.of(context)?.isCurrent == false) return;
+    // Check the current identity synchronously as well as through the listener.
+    if (_verifiedUser() != _chat.userId) {
+      _accountChanged();
+      return;
+    }
+    final result = _chat.submit(_input.text);
+    if (result == ChatSubmission.accepted) {
+      _input.clear();
+      setState(() => _composerError = null);
+    } else if (result == ChatSubmission.tooLong) {
+      setState(() =>
+          _composerError = const ChatException(ChatFailure.tooLong).message);
+    } else if (result == ChatSubmission.noSession) {
+      setState(() => _composerError = 'Sign in to chat with Allen.');
+    }
+  }
 
-    setState(() {
-      _messages.add({'text': text, 'isUser': true});
-      _isLoading = true;
-    });
+  void _retry(int id) {
+    if (ModalRoute.of(context)?.isCurrent == false) return;
+    if (_verifiedUser() != _chat.userId) {
+      _accountChanged();
+      return;
+    }
+    _chat.retry(id);
+  }
 
-    _controller.clear();
-    _scrollToBottom();
-
-    final response = await _aiService.chat(text);
-
-    setState(() {
-      _messages.add({'text': response, 'isUser': false});
-      _isLoading = false;
-    });
-
-    _scrollToBottom();
+  void _accountChanged() {
+    final id = _verifiedUser();
+    if (id == _chat.userId) return;
+    _input.clear();
+    _composerError = null;
+    _nearBottom = true;
+    _chat.resetForUser(id);
   }
 
   @override
   void dispose() {
-    _controller.dispose();
-    _scrollController.dispose();
+    WidgetsBinding.instance.removeObserver(this);
+    _chat.removeListener(_conversationChanged);
+    _chat.dispose();
+    _input.removeListener(_draftChanged);
+    _input.dispose();
+    _scroll.removeListener(_trackScroll);
+    _scroll.dispose();
     super.dispose();
   }
 
   @override
-  Widget build(BuildContext context) {
-    return Scaffold(
-      backgroundColor: Pallete.backgroundColor,
-      appBar: AppBar(
-        backgroundColor: Pallete.surfaceColor,
-        title: Row(
-          mainAxisSize: MainAxisSize.min,
+  Widget build(BuildContext context) => BlocListener<AuthCubit, AuthState>(
+      listener: (_, state) => _accountChanged(),
+      child: AppThemeScope(child: Builder(builder: (context) {
+        final theme = Theme.of(context),
+            scale = MediaQuery.textScalerOf(context);
+        final subtitleLines =
+            MediaQuery.sizeOf(context).width < 400 && scale.scale(12) > 18
+                ? 2
+                : 1;
+        final toolbar = math.max(64.0,
+            scale.scale(20) * 1.3 + scale.scale(12) * 1.5 * subtitleLines + 12);
+        return PopScope(
+          onPopInvokedWithResult: (didPop, _) {
+            if (didPop) _chat.abandon();
+          },
+          child: Scaffold(
+            appBar: AppBar(
+                toolbarHeight: toolbar,
+                titleSpacing: AppSpacing.md,
+                title: Row(children: [
+                  const AllenSparkle(),
+                  const SizedBox(width: 12),
+                  Expanded(
+                      child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                        Text('Allen',
+                            style: theme.textTheme.titleLarge,
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis),
+                        Text('AI Fitness Coach',
+                            style: theme.textTheme.bodySmall,
+                            maxLines: subtitleLines,
+                            overflow: TextOverflow.ellipsis),
+                      ])),
+                ])),
+            resizeToAvoidBottomInset: true,
+            body: SafeArea(
+                top: false,
+                bottom: false,
+                child: LayoutBuilder(
+                    builder: (context, constraints) => Column(children: [
+                          Expanded(
+                              child: Align(
+                                  alignment: Alignment.topCenter,
+                                  child: ConstrainedBox(
+                                      constraints: const BoxConstraints(
+                                          maxWidth: AppLayout.contentWidth),
+                                      child: _thread(context)))),
+                          ConstrainedBox(
+                              constraints: BoxConstraints(
+                                  maxHeight: constraints.maxHeight),
+                              child: SingleChildScrollView(
+                                  child: Align(
+                                      alignment: Alignment.bottomCenter,
+                                      child: ConstrainedBox(
+                                          constraints: const BoxConstraints(
+                                              maxWidth: AppLayout.contentWidth),
+                                          child: _composer(context,
+                                              constraints.maxHeight))))),
+                        ]))),
+          ),
+        );
+      })));
+
+  Widget _thread(BuildContext context) {
+    final messages = _chat.messages;
+    if (messages.isEmpty) {
+      return ListView(
+          padding: const EdgeInsets.all(AppSpacing.page),
           children: [
-            Container(
-              width: 8,
-              height: 8,
-              decoration: const BoxDecoration(
-                color: Pallete.successColor,
-                shape: BoxShape.circle,
-              ),
-            ),
-            const SizedBox(width: 8),
-            const Text('AI Coach'),
-          ],
-        ),
-        bottom: PreferredSize(
-          preferredSize: const Size.fromHeight(1),
-          child: Container(height: 1, color: Pallete.borderColor),
-        ),
-      ),
-      body: Column(
-        children: [
-          Expanded(
-            child: ListView.builder(
-              controller: _scrollController,
-              padding: const EdgeInsets.symmetric(vertical: 16),
-              itemCount: _messages.length,
-              itemBuilder: (context, index) {
-                final msg = _messages[index];
-                final isUser = msg['isUser'] as bool;
-                return Align(
-                  alignment:
-                      isUser ? Alignment.centerRight : Alignment.centerLeft,
-                  child: Container(
-                    constraints: BoxConstraints(
-                      maxWidth: MediaQuery.of(context).size.width * 0.75,
-                    ),
-                    margin:
-                        const EdgeInsets.symmetric(vertical: 4, horizontal: 16),
-                    padding: const EdgeInsets.symmetric(
-                        horizontal: 14, vertical: 10),
-                    decoration: BoxDecoration(
-                      color: isUser
-                          ? Pallete.primaryAccent.withValues(alpha: 0.15)
-                          : Pallete.cardColor,
-                      borderRadius: BorderRadius.only(
-                        topLeft: const Radius.circular(16),
-                        topRight: const Radius.circular(16),
-                        bottomLeft: Radius.circular(isUser ? 16 : 4),
-                        bottomRight: Radius.circular(isUser ? 4 : 16),
-                      ),
-                      border: Border.all(
-                        color: isUser
-                            ? Pallete.primaryAccent.withValues(alpha: 0.3)
-                            : Pallete.borderColor,
-                      ),
-                    ),
-                    child: Text(
-                      msg['text'] as String,
-                      style: TextStyle(
-                        color: isUser
-                            ? Pallete.primaryAccent
-                            : Pallete.mainFontColor,
-                        fontSize: 14,
-                        height: 1.5,
-                      ),
-                    ),
-                  ),
-                );
-              },
-            ),
-          ),
-          if (_isLoading)
-            Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-              child: Align(
-                alignment: Alignment.centerLeft,
-                child: Container(
-                  padding:
-                      const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
-                  decoration: BoxDecoration(
-                    color: Pallete.cardColor,
-                    borderRadius: BorderRadius.circular(16),
-                    border: Border.all(color: Pallete.borderColor),
-                  ),
-                  child: const Text(
-                    'Allen is thinking...',
-                    style: TextStyle(
-                      color: Pallete.subFontColor,
-                      fontSize: 13,
-                    ),
-                  ),
-                ),
-              ),
-            ),
-          Container(
-            padding: const EdgeInsets.fromLTRB(16, 8, 16, 16),
-            decoration: const BoxDecoration(
-              color: Pallete.surfaceColor,
-              border: Border(
-                top: BorderSide(color: Pallete.borderColor),
-              ),
-            ),
-            child: Row(
-              children: [
+            const SizedBox(height: AppSpacing.md),
+            Text('Ask Allen', style: Theme.of(context).textTheme.headlineSmall),
+            const SizedBox(height: AppSpacing.sm),
+            const Text(
+                'Ideas for workouts, nutrition, and healthy routines. What’s on your mind?'),
+            const SizedBox(height: AppSpacing.md),
+            ValueListenableBuilder<TextEditingValue>(
+                valueListenable: _input,
+                builder: (context, value, _) => Wrap(
+                        spacing: AppSpacing.sm,
+                        runSpacing: AppSpacing.sm,
+                        children: [
+                          for (final item in [
+                            (
+                              'Workout ideas',
+                              'How can I build a balanced beginner workout routine?'
+                            ),
+                            (
+                              'Nutrition basics',
+                              'What are some practical ways to build balanced meals?'
+                            ),
+                            (
+                              'Healthy routines',
+                              'How can I make a consistent fitness routine?'
+                            )
+                          ])
+                            ActionChip(
+                                label: Text(item.$1),
+                                onPressed:
+                                    !_chat.hasSession || value.text.isNotEmpty
+                                        ? null
+                                        : () => _input.text = item.$2),
+                        ])),
+            const SizedBox(height: AppSpacing.lg),
+            Text('Chats are temporary and aren’t saved in Allen.',
+                style: Theme.of(context).textTheme.bodySmall),
+            if (!_chat.hasSession)
+              const Padding(
+                  padding: EdgeInsets.only(top: AppSpacing.md),
+                  child: Text('Sign in to chat with Allen.')),
+          ]);
+    }
+    return ListView.builder(
+        key: const Key('chat-thread'),
+        controller: _scroll,
+        padding: const EdgeInsets.fromLTRB(
+            AppSpacing.page, AppSpacing.sm, AppSpacing.page, AppSpacing.md),
+        itemCount: messages.length + (_chat.sending ? 1 : 0),
+        itemBuilder: (context, index) {
+          if (index == messages.length) {
+            return Padding(
+                padding: const EdgeInsets.symmetric(vertical: AppSpacing.md),
+                child: Semantics(
+                    liveRegion: true,
+                    child: Text('Allen is thinking…',
+                        style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                            color: Theme.of(context).colorScheme.secondary))));
+          }
+          final message = messages[index];
+          return CoachMessageBubble(
+              key: ValueKey(message.id),
+              message: message,
+              onRetry:
+                  _chat.canRetry(message.id) ? () => _retry(message.id) : null);
+        });
+  }
+
+  Widget _composer(BuildContext context, double height) {
+    final compact = height < 260;
+    final maxLines = compact
+        ? 1
+        : height < 400 || MediaQuery.textScalerOf(context).scale(16) > 24
+            ? 2
+            : 4;
+    return SafeArea(
+        top: false,
+        minimum: EdgeInsets.fromLTRB(
+            AppSpacing.page,
+            compact ? 4 : AppSpacing.sm,
+            AppSpacing.page,
+            compact ? 4 : AppSpacing.sm),
+        child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              Row(crossAxisAlignment: CrossAxisAlignment.end, children: [
                 Expanded(
-                  child: TextField(
-                    controller: _controller,
-                    style: const TextStyle(color: Pallete.mainFontColor),
-                    maxLines: null,
-                    textInputAction: TextInputAction.send,
-                    onSubmitted: (_) => _sendMessage(),
-                    decoration: InputDecoration(
-                      hintText: 'Ask your coach...',
-                      hintStyle: const TextStyle(color: Pallete.hintColor),
-                      filled: true,
-                      fillColor: Pallete.cardColor,
-                      contentPadding: const EdgeInsets.symmetric(
-                          horizontal: 16, vertical: 12),
-                      border: OutlineInputBorder(
-                        borderRadius: BorderRadius.circular(24),
-                        borderSide: BorderSide.none,
-                      ),
-                      enabledBorder: OutlineInputBorder(
-                        borderRadius: BorderRadius.circular(24),
-                        borderSide: const BorderSide(
-                            color: Pallete.borderColor, width: 1),
-                      ),
-                      focusedBorder: OutlineInputBorder(
-                        borderRadius: BorderRadius.circular(24),
-                        borderSide: BorderSide(
-                            color: Pallete.primaryAccent.withValues(alpha: 0.6),
-                            width: 1.5),
-                      ),
-                    ),
-                  ),
-                ),
-                const SizedBox(width: 8),
-                GestureDetector(
-                  onTap: _sendMessage,
-                  child: Container(
-                    width: 46,
-                    height: 46,
-                    decoration: const BoxDecoration(
-                      color: Pallete.primaryAccent,
-                      shape: BoxShape.circle,
-                    ),
-                    child: const Icon(
-                      Icons.send_rounded,
-                      color: Pallete.backgroundColor,
-                      size: 20,
-                    ),
-                  ),
-                ),
-              ],
-            ),
-          ),
-        ],
-      ),
-    );
+                    child: TextField(
+                        key: const Key('chat-input'),
+                        controller: _input,
+                        minLines: 1,
+                        maxLines: maxLines,
+                        textCapitalization: TextCapitalization.sentences,
+                        textInputAction: TextInputAction.send,
+                        keyboardType: TextInputType.multiline,
+                        onSubmitted: (_) => _send(),
+                        style: Theme.of(context).textTheme.bodyLarge?.copyWith(
+                            color: Theme.of(context).colorScheme.onSurface),
+                        decoration: const InputDecoration(
+                            hintText: 'Message Allen',
+                            contentPadding: EdgeInsets.symmetric(
+                                horizontal: AppSpacing.md, vertical: 8)))),
+                const SizedBox(width: AppSpacing.sm),
+                ValueListenableBuilder<TextEditingValue>(
+                    valueListenable: _input,
+                    builder: (context, value, _) => Tooltip(
+                        message: 'Send message',
+                        excludeFromSemantics: true,
+                        child: FilledButton(
+                            key: const Key('chat-send'),
+                            onPressed: _chat.sending ||
+                                    !_chat.hasSession ||
+                                    value.text.trim().isEmpty
+                                ? null
+                                : _send,
+                            style: FilledButton.styleFrom(
+                                minimumSize: const Size(52, 52),
+                                padding: const EdgeInsets.all(12)),
+                            child: const Icon(Icons.arrow_upward_rounded,
+                                semanticLabel: 'Send message')))),
+              ]),
+              if (_composerError != null)
+                Padding(
+                    padding: const EdgeInsets.only(top: AppSpacing.sm),
+                    child: Semantics(
+                        liveRegion: true,
+                        child: Text(_composerError!,
+                            style: Theme.of(context)
+                                .textTheme
+                                .bodySmall
+                                ?.copyWith(
+                                    color:
+                                        Theme.of(context).colorScheme.error)))),
+            ]));
   }
 }

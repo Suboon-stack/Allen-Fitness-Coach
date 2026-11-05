@@ -8,7 +8,7 @@ Allen is a Flutter fitness application that brings workout planning, nutrition t
 
 Allen helps users plan and save workouts, track activity and weight, generate meal plans, estimate nutrition from food photos, and ask an AI fitness coach questions. Firebase handles authentication; fitness records currently persist locally on the device.
 
-The owner reviewed and approved the previous Midnight Navy + Electric Blue milestone on an Android phone, including the refined Welcome screen. The Nutrition Planner and circular Nutrition/Water trackers are now also owner-approved for this redesign-branch milestone. UI approval does not establish complete live-service or persistence verification.
+The owner reviewed and approved the previous Midnight Navy + Electric Blue milestone on an Android phone, including the refined Welcome screen. The Nutrition Planner and circular Nutrition/Water trackers are now also owner-approved for this redesign-branch milestone. The AI Coach Chat UI/UX was subsequently tested and approved by the owner on Android. UI approval does not establish complete live-service, accessibility, or persistence verification.
 
 ## Tech Stack
 
@@ -16,7 +16,7 @@ The owner reviewed and approved the previous Midnight Navy + Electric Blue miles
 | --- | --- |
 | Application | Flutter, Dart, Material 3 |
 | Authentication | Firebase Authentication, Firebase Core |
-| State management | Bloc/Cubit for authentication; widget-local state for fitness screens |
+| State management | Bloc/Cubit for authentication; typed ChangeNotifier controller for chat; widget-local state for other fitness screens |
 | AI integration | Google Gemini API over HTTP, including food-image analysis |
 | Local persistence | SharedPreferences, local services and repositories |
 | Device capabilities | Image Picker, Flutter Local Notifications, Path Provider |
@@ -35,7 +35,7 @@ Cloud Firestore is a dependency and appears in model serializers; current fitnes
 | Saved Workouts | Ready/completed filters, expandable details, completion, and confirmed deletion. UUID, duplicate-action and persistence-failure regression tests; full device/restart verification remains pending. |
 | Nutrition | Meal generation, logging, summaries, and water tracking are implemented. Planner and circular Nutrition/Water trackers are redesigned and owner-approved. Meal logging validates values; water uses the labeled app default and confirmed daily totals. |
 | Food analysis | Camera/gallery selection and Gemini nutrition estimates are implemented. Error/result handling needs improvement. |
-| AI Coach | Gemini conversation and in-session history are implemented. Interface and error handling improvements are upcoming. |
+| AI Coach | Redesigned and UI/UX-approved on Android: original sparkle header, selectable formatted replies, bounded temporary context, safe errors/Retry, and request/account/navigation guards. Automated reliability coverage; no saved conversation archive. |
 | Progress | Weight logging, charts, and activity summaries are implemented. Weight deletion and account data separation have known limitations. |
 | Profile and Settings | Profile editing, BMI, nutrition targets, JSON export, and account controls are implemented; redesign and further verification are upcoming. |
 | Reminders | Immediate notifications and an enable preference exist; recurring daily scheduling is not implemented. |
@@ -50,7 +50,7 @@ Cloud Firestore is a dependency and appears in model serializers; current fitnes
 - [x] **Workout Planner** — redesigned; generation, saving, completion, and failure handling have automated coverage.
 - [x] **Saved Workouts** — redesigned, pending full functionality verification on device.
 - [x] **Nutrition** — Planner, circular Tracker/Water, and validated meal logging redesigned and owner-approved; remaining device/live-service verification is tracked separately.
-- [ ] **AI Coach** — upcoming.
+- [x] **AI Coach** — Chat redesigned and UI/UX-approved on Android; implemented on `feature/ai-coach-redesign`. See [design, validation and security notes](docs/ui-ux/ai-coach-redesign.md).
 - [ ] **Progress** — upcoming.
 - [ ] **Profile and Settings** — upcoming.
 
@@ -77,6 +77,20 @@ Nutrition has three tabs that share the Midnight Material 3 design system:
 **Current limits:** The interface only browses today's records. Yesterday's retained data has no history/date selector yet; water has no individual-entry history or undo. Fitness records are device-local rather than cloud-synchronized, and date-only water totals are still shared across accounts on a device. Ownership migration needs a separate approved plan.
 
 See the [design and Android checklist](docs/ui-ux/nutrition-water-trackers.md), [repair root causes](docs/ui-ux/nutrition-repairs.md), and [approved Nutrition milestone](docs/ui-ux/approved-nutrition-milestone.md). UI approval does not imply that every live API, physical-device failure or process-restart case has been verified.
+
+## AI Coach Chat
+
+Ask Allen provides a minimalist Midnight chat interface with an original four-point sparkle, starter suggestions that populate the composer, readable message bubbles, and selectable paragraphs/lists. The keyboard-safe composer supports bounded multiline input and an accessible send button. Scrolling follows new messages near the bottom while preserving the position of someone reading earlier replies.
+
+**Gemini integration:** `AiService.chat` sends the fitness instructions, current question, and bounded successful conversation context to the configured Gemini REST endpoint. Only one request can be active per conversation. A 30-second timeout and response validation handle empty, malformed, blocked, or truncated output. Workout and meal generation remain on their existing paths.
+
+**Recovery:** HTTP/provider statuses map to fixed, understandable messages. Raw exceptions, request URLs and provider details are not shown or logged by chat. Retry reuses the latest failed user message rather than adding a duplicate; an unsent composer draft is retained. Failed exchanges never become successful model context, and account changes/navigation invalidate stale replies.
+
+**Temporary context and limits:** Chats are not saved in Allen and start fresh when reopening the screen. Gemini context keeps at most eight successful exchanges and 16,000 text units including instructions and the current question; older complete exchanges are removed as needed. Inputs are limited to 4,000 and visible replies to 12,000 text units. These bounds use UTF-16 code units, not token counts. Formatting is a small text-only subset rather than a full Markdown/web renderer. No saved history, streaming, or automatic access to personal fitness records is implemented.
+
+**Security boundary:** Requests still originate in the mobile client. Git-ignored configuration and sanitized errors do not protect a bundled API key from extraction. Backend-mediated key management remains a separately planned architectural improvement; this milestone does not claim complete key protection.
+
+The owner has approved the UI/UX on Android. [Design decisions and device checklist](docs/ui-ux/ai-coach-redesign.md), [repair root causes](docs/ui-ux/ai-coach-repairs.md), and [milestone validation](docs/ui-ux/approved-ai-coach-milestone.md) distinguish that approval from automated tests and remaining live-service/accessibility checks.
 
 ## Current Development
 
@@ -110,10 +124,12 @@ The dashboard statistics-source mismatch and workout completion UUID bug have ta
 
 Android is the current build/review target. Install Flutter with a compatible Dart 3 SDK, Android SDK, and Java 17 toolchain. The Firebase CLI and FlutterFire CLI are needed to configure your own Firebase project.
 
+The approved AI Coach Chat milestone is on `feature/ai-coach-redesign`; merging it into `main` is a separate step.
+
 ```bash
 git clone https://github.com/Suboon-stack/Allen-Fitness-Coach.git
 cd Allen-Fitness-Coach
-git switch redesign/performance-studio-auth
+git switch feature/ai-coach-redesign
 flutter doctor
 flutter pub get
 ```
@@ -151,7 +167,7 @@ flutter test
 flutter build apk --debug
 ```
 
-Tests use test doubles and isolated storage; they do not prove live Firebase/Gemini availability or exercise real user records. See the [Nutrition milestone review](docs/ui-ux/approved-nutrition-milestone.md) and [earlier UI milestone](docs/ui-ux/approved-midnight-milestone.md) for executed results and remaining manual checks.
+Tests use test doubles and isolated storage; they do not prove live Firebase/Gemini availability or exercise real user records. See the [AI Coach milestone review](docs/ui-ux/approved-ai-coach-milestone.md), [Nutrition milestone](docs/ui-ux/approved-nutrition-milestone.md), and [earlier UI milestone](docs/ui-ux/approved-midnight-milestone.md) for executed results and remaining manual checks.
 
 ## Development Notes
 
