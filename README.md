@@ -8,7 +8,7 @@ Allen is a Flutter fitness application that brings workout planning, nutrition t
 
 Allen helps users plan and save workouts, track activity and weight, generate meal plans, estimate nutrition from food photos, and ask an AI fitness coach questions. Firebase handles authentication; fitness records currently persist locally on the device.
 
-The owner reviewed and approved the previous Midnight Navy + Electric Blue milestone on an Android phone, including the refined Welcome screen. The Nutrition Planner and circular Nutrition/Water trackers are now also owner-approved for this redesign-branch milestone. The AI Coach Chat UI/UX was subsequently tested and approved by the owner on Android. UI approval does not establish complete live-service, accessibility, or persistence verification.
+The owner reviewed and approved the previous Midnight Navy + Electric Blue milestone on an Android phone, including the refined Welcome screen. The Nutrition Planner and circular Nutrition/Water trackers are now also owner-approved for this redesign-branch milestone. The AI Coach Chat UI/UX and Food Scanner implementation/UI/UX were subsequently tested and approved by the owner on Android. UI approval does not establish complete live-service, accessibility, or persistence verification.
 
 ## Tech Stack
 
@@ -16,10 +16,10 @@ The owner reviewed and approved the previous Midnight Navy + Electric Blue miles
 | --- | --- |
 | Application | Flutter, Dart, Material 3 |
 | Authentication | Firebase Authentication, Firebase Core |
-| State management | Bloc/Cubit for authentication; typed ChangeNotifier controller for chat; widget-local state for other fitness screens |
+| State management | Bloc/Cubit for authentication; typed ChangeNotifier controllers for chat and food scanning; widget-local state for other fitness screens |
 | AI integration | Google Gemini API over HTTP, including food-image analysis |
 | Local persistence | SharedPreferences, local services and repositories |
-| Device capabilities | Image Picker, Flutter Local Notifications, Path Provider |
+| Device capabilities | Camera (embedded still-photo capture), Image Picker, Flutter Local Notifications, Path Provider |
 | Charts and utilities | FL Chart, Intl, UUID |
 | Testing | Flutter Test, mock HTTP responses, isolated preference storage |
 
@@ -34,7 +34,7 @@ Cloud Firestore is a dependency and appears in model serializers; current fitnes
 | Workout Planner | Focus, difficulty and duration preferences; Gemini generation; compact exercise details; save and completion actions. Explicit generation failures and retry replace silent workout fallbacks. |
 | Saved Workouts | Ready/completed filters, expandable details, completion, and confirmed deletion. UUID, duplicate-action and persistence-failure regression tests; full device/restart verification remains pending. |
 | Nutrition | Meal generation, logging, summaries, and water tracking are implemented. Planner and circular Nutrition/Water trackers are redesigned and owner-approved. Meal logging validates values; water uses the labeled app default and confirmed daily totals. |
-| Food analysis | Camera/gallery selection and Gemini nutrition estimates are implemented. Error/result handling needs improvement. |
+| Food Scanner | Android-tested and owner-approved: embedded camera, gallery selection, explicit photo review/analysis, Gemini nutrition estimates, editing, and confirmed saving to Nutrition Tracker. Safe failures/retry and duplicate/stale-response guards have automated coverage. |
 | AI Coach | Redesigned and UI/UX-approved on Android: original sparkle header, selectable formatted replies, bounded temporary context, safe errors/Retry, and request/account/navigation guards. Automated reliability coverage; no saved conversation archive. |
 | Progress | Weight logging, charts, and activity summaries are implemented. Weight deletion and account data separation have known limitations. |
 | Profile and Settings | Profile editing, BMI, nutrition targets, JSON export, and account controls are implemented; redesign and further verification are upcoming. |
@@ -50,7 +50,8 @@ Cloud Firestore is a dependency and appears in model serializers; current fitnes
 - [x] **Workout Planner** — redesigned; generation, saving, completion, and failure handling have automated coverage.
 - [x] **Saved Workouts** — redesigned, pending full functionality verification on device.
 - [x] **Nutrition** — Planner, circular Tracker/Water, and validated meal logging redesigned and owner-approved; remaining device/live-service verification is tracked separately.
-- [x] **AI Coach** — Chat redesigned and UI/UX-approved on Android; implemented on `feature/ai-coach-redesign`. See [design, validation and security notes](docs/ui-ux/ai-coach-redesign.md).
+- [x] **AI Coach** — Chat redesigned and UI/UX-approved on Android; merged into `main`. See [design, validation and security notes](docs/ui-ux/ai-coach-redesign.md).
+- [x] **Food Scanner** — dashboard, camera and results redesigned; implementation/UI/UX tested and owner-approved on Android. See [design and validation](docs/ui-ux/food-scanner-redesign.md).
 - [ ] **Progress** — upcoming.
 - [ ] **Profile and Settings** — upcoming.
 
@@ -92,6 +93,22 @@ Ask Allen provides a minimalist Midnight chat interface with an original four-po
 
 The owner has approved the UI/UX on Android. [Design decisions and device checklist](docs/ui-ux/ai-coach-redesign.md), [repair root causes](docs/ui-ux/ai-coach-repairs.md), and [milestone validation](docs/ui-ux/approved-ai-coach-milestone.md) distinguish that approval from automated tests and remaining live-service/accessibility checks.
 
+## AI Food Scanner
+
+Food Scanner provides a cohesive Midnight Navy + Electric Blue flow: a minimalist entry screen, camera-first capture, photo review, and compact nutrition results. The owner tested and approved the implementation and UI/UX on an Android phone.
+
+- **Camera or gallery:** Capture a still photo with the approved Flutter `camera` plugin, or select one using Image Picker. The embedded preview includes framing brackets, a shutter, a gallery shortcut, and lens switching when supported. Camera permission/unavailable states offer recovery; audio capture is disabled.
+- **Explicit Gemini analysis:** Selecting a photo does not upload it. Review it first, then press **Analyze photo** to send it to Gemini. Results show the identified name, estimated calories/protein/carbohydrates/fat, and supported items/portion estimates only when returned. An optional AI food note is retained when available. No predefined nutrition is substituted after failure.
+- **Review and edit:** Correct names, quantities and nutrition in a keyboard-safe form. Nutrition values are totals for the reviewed portion; changing quantities does not automatically recalculate them. **Apply changes** updates the review without saving a meal.
+- **Save to Nutrition:** Choose an existing meal category and explicitly confirm **Save to Nutrition**. The existing local meal repository stores the reviewed values and AI provenance without a storage migration. Pending/success guards and a stable draft ID protect against duplicate saves and uncertain-write retries. **View Nutrition** reads the saved meal and matching totals, with an **AI Estimate · reviewed** label.
+- **Recovery:** A 30-second timeout, structured provider/HTTP error handling, image/response validation and explicit retry cover failed requests. Overlapping analysis is blocked; navigation, account changes and newer selections invalidate stale responses. Scanner errors do not expose raw provider exceptions, request URLs or credentials.
+
+**Limits:** Nutrition estimates can be inaccurate and are not verified nutrition measurements. JPEG, PNG and WebP images up to 8 MB after selection processing are supported; unsupported or unreadable images need another selection. Unsaved scans are temporary. There is no persisted photo archive or Recent Scans history; confirmed meals use existing account-owned device-local records. Changing a portion is not an automatic nutrition calculation. External Gemini availability/quota and device camera behavior still vary; owner approval does not certify every failure, device, accessibility or process-restart case.
+
+**Client-side key risk:** Food analysis uses the existing direct mobile-to-Gemini architecture. The bundled API key can be extracted even though local credentials are git-ignored and errors are sanitized. A server-side gateway and stronger credential management remain future work.
+
+The milestone has 63 scanner tests; the full suite has 305 passing tests. Mock camera/HTTP/storage coverage is distinct from the owner's Android review. See the [case study, validation and Android checklist](docs/ui-ux/food-scanner-redesign.md) and [repair root causes](docs/ui-ux/food-scanner-repairs.md).
+
 ## Current Development
 
 - Consistent UI/UX design and reusable components.
@@ -106,13 +123,14 @@ The owner has approved the UI/UX on Android. [Design decisions and device checkl
 
 Genuine captures of earlier application versions are available under [`docs/screenshots/`](docs/screenshots/) and [`docs/ui-ux/screenshots/`](docs/ui-ux/screenshots/). They are historical references, not screenshots of the approved Midnight UI.
 
-Current Midnight screenshots have not been added. Place actual Android captures in `docs/ui-ux/screenshots/`, for example `welcome-motion-midnight.png`, `midnight-home.png`, `midnight-workout-plan.png`, and `midnight-saved-workouts.png`. Follow the [screenshot checklist](docs/ui-ux/screenshot-checklist.md), record the device/build, and remove personal information. No mockups or AI-generated images are used as implementation evidence.
+Current Midnight screenshots have not been added. Place actual Android captures in `docs/ui-ux/screenshots/`, for example `welcome-motion-midnight.png`, `midnight-home.png`, `midnight-workout-plan.png`, and `midnight-saved-workouts.png`. Food Scanner captures can use `midnight-food-scanner.png`, `midnight-food-camera.png`, and `midnight-food-result.png`; no current scanner captures have been supplied to the repository. Follow the [screenshot checklist](docs/ui-ux/screenshot-checklist.md), record the device/build, and remove personal information. No mockups or AI-generated images are used as implementation evidence.
 
 ## Known Issues
 
 - Local fitness/profile data is not consistently isolated per account. Nutrition meal reads now filter existing owner IDs; water and raw Progress statistics still have shared-data limitations. A separate ownership/migration plan is needed; no existing records are migrated or deleted.
 - Weight records lack stable IDs for reliable individual deletion; the Settings clear-weight action also uses a legacy storage path.
-- Quote failures can still use predefined fallbacks. Workout and meal generation now report failures explicitly; remaining AI flows need further review.
+- Quote failures can still use predefined fallbacks. Workout/meal generation, AI Coach Chat and Food Scanner report failures explicitly; the quote fallback remains separate.
+- Food-image nutrition is an estimate, not independently verified data. No saved photo/scan archive is implemented; the Gemini key remains extractable from the client until a backend gateway is introduced.
 - Recurring daily reminders are not implemented.
 - The registration name is collected but not persisted by the authentication repository.
 - Workout history retains the existing latest-50 limit. Live Gemini output, real app-restart persistence, TalkBack, and full authentication flows need further device verification.
@@ -122,14 +140,14 @@ The dashboard statistics-source mismatch and workout completion UUID bug have ta
 
 ## Getting Started
 
-Android is the current build/review target. Install Flutter with a compatible Dart 3 SDK, Android SDK, and Java 17 toolchain. The Firebase CLI and FlutterFire CLI are needed to configure your own Firebase project.
+Android is the current build/review target. Use Flutter 3.41 or newer with Dart 3.11 or newer (the current dependency lock minimums), Android SDK with an API 24+ target device, and a Java 17 toolchain. The Firebase CLI and FlutterFire CLI are needed to configure your own Firebase project.
 
-The approved AI Coach Chat milestone is on `feature/ai-coach-redesign`; merging it into `main` is a separate step.
+Use `main` for the approved milestones; feature branches are retained for their review history.
 
 ```bash
 git clone https://github.com/Suboon-stack/Allen-Fitness-Coach.git
 cd Allen-Fitness-Coach
-git switch feature/ai-coach-redesign
+git switch main
 flutter doctor
 flutter pub get
 ```
@@ -167,7 +185,7 @@ flutter test
 flutter build apk --debug
 ```
 
-Tests use test doubles and isolated storage; they do not prove live Firebase/Gemini availability or exercise real user records. See the [AI Coach milestone review](docs/ui-ux/approved-ai-coach-milestone.md), [Nutrition milestone](docs/ui-ux/approved-nutrition-milestone.md), and [earlier UI milestone](docs/ui-ux/approved-midnight-milestone.md) for executed results and remaining manual checks.
+Tests use test doubles and isolated storage; they do not prove live Firebase/Gemini availability or exercise real user records. See the [Food Scanner case study and validation](docs/ui-ux/food-scanner-redesign.md), [AI Coach milestone review](docs/ui-ux/approved-ai-coach-milestone.md), [Nutrition milestone](docs/ui-ux/approved-nutrition-milestone.md), and [earlier UI milestone](docs/ui-ux/approved-midnight-milestone.md) for executed results and remaining manual checks.
 
 ## Development Notes
 

@@ -67,3 +67,23 @@ The owner requested both trackers after the Planner stage. [Capture/checklist de
 ## AI Coach Chat — UI/UX approved; captures pending
 
 Capture the original sparkle/header, empty suggestions, real conversation formatting, pending send, sanitized retry, and small-screen keyboard/large-text states. [Detailed checklist](ai-coach-redesign.md#screenshot-checklist). The owner has tested and approved the UI/UX on Android. Actual capture files remain pending; no additional test results are claimed. Use actual Android renders and remove personal text; fixtures/mockups do not establish live Gemini functionality.
+
+
+## Food Scanner — owner-approved on Android; captures pending
+
+Reference: owner-supplied `Allen Food Scanner UI Concepts.png`; do not use it as implemented-app evidence. The owner reports completing Android testing and approves the implementation/UI/UX. Capture genuine Android screenshots; none have been added to the repository. The unchecked items below remain capture/regression reminders, not claims about individual tests the owner performed.
+
+- [ ] Before: historical scanner screenshot, labeled as the original UI.
+- [ ] Dashboard with Allen sparkle, both source actions, no invented recent scans.
+- [ ] Real camera preview with frame, shutter, gallery and supported lens switch.
+- [ ] Permission denied / camera unavailable with gallery alternative.
+- [ ] Local photo review before upload; cancellation returns safely.
+- [ ] Active analysis and sanitized network/quota/invalid-response retry.
+- [ ] Actual Gemini result with AI Estimate badge, calories/macros and supported identified items only.
+- [ ] Keyboard-safe editing, invalid value feedback, quantity explanation.
+- [ ] Explicit saved confirmation and Nutrition showing matching values / AI Estimate label.
+- [ ] Reopen app and confirm the logged meal remains with no duplicate after repeated taps/retry.
+- [ ] Small Android, landscape, 200% font, TalkBack, system bars and keyboard.
+- [ ] Background/resume, Back during capture/analysis and account switch; old results never reappear.
+
+Mocked widget previews/fixtures are automated tests, not live Gemini or native-camera evidence.

@@ -4,6 +4,8 @@ import 'dart:io';
 
 import 'package:allen/secrets.dart';
 import 'gemini_chat_session.dart';
+import 'gemini_food_analyzer.dart';
+import '../models/food_estimate.dart';
 import 'package:allen/fitness/services/workout_plan_parser.dart';
 import 'package:allen/fitness/services/meal_plan_parser.dart';
 import 'package:http/http.dart' as http;
@@ -13,15 +15,20 @@ class AiService {
       {http.Client? client,
       Duration workoutTimeout = const Duration(seconds: 30),
       Duration mealTimeout = const Duration(seconds: 30),
-      Duration chatTimeout = const Duration(seconds: 30)})
+      Duration chatTimeout = const Duration(seconds: 30),
+      Duration foodTimeout = const Duration(seconds: 30)})
       : _client = client,
         _workoutTimeout = workoutTimeout,
         _mealTimeout = mealTimeout,
-        _chatTimeout = chatTimeout;
+        _chatTimeout = chatTimeout,
+        _foodTimeout = foodTimeout;
   final http.Client? _client;
   final Duration _workoutTimeout;
   final Duration _mealTimeout;
   final Duration _chatTimeout;
+  final Duration _foodTimeout;
+  late final GeminiFoodAnalyzer _foodAnalyzer = GeminiFoodAnalyzer(
+      apiKey: geminiAPIKey, client: _client, timeout: _foodTimeout);
   late final GeminiChatSession _chatSession = GeminiChatSession(
       apiKey: geminiAPIKey,
       client: _client,
@@ -248,73 +255,16 @@ Nutrition values are estimates. Do not claim medical or personalized dietary adv
     _chatSession.reset();
   }
 
+  Future<FoodEstimate> analyzeFoodEstimate(File imageFile) =>
+      _foodAnalyzer.analyze(imageFile);
+
+  void cancelFoodAnalysis() => _foodAnalyzer.cancel();
+
+  // Preserve the existing labeled-text entry point for any legacy callers.
   Future<String> analyzeFood(File imageFile) async {
-    try {
-      const model = 'gemini-2.5-flash-lite';
-      final cleanKey = geminiAPIKey.trim();
-      final uri = Uri.parse(
-        'https://generativelanguage.googleapis.com/v1beta/models/$model:generateContent?key=$cleanKey',
-      );
-
-      // Convert image to base64
-      final bytes = await imageFile.readAsBytes();
-      final base64Image = base64Encode(bytes);
-
-      // Get file extension for mime type
-      final ext = imageFile.path.split('.').last.toLowerCase();
-      final mimeType = ext == 'png' ? 'image/png' : 'image/jpeg';
-
-      final body = jsonEncode({
-        'contents': [
-          {
-            'role': 'user',
-            'parts': [
-              {
-                'inline_data': {
-                  'mime_type': mimeType,
-                  'data': base64Image,
-                }
-              },
-              {
-                'text':
-                    '''You are a nutrition expert. Analyze this food image and provide:
-1. What food items you can see
-2. Estimated total calories
-3. Estimated macros (protein, carbs, fat)
-4. A short health tip about this meal
-
-Format your response EXACTLY like this:
-FOOD: [food items you see]
-CALORIES: [estimated calories] kcal
-PROTEIN: [grams]g
-CARBS: [grams]g
-FAT: [grams]g
-TIP: [short health tip]
-
-Be realistic with estimates. If you cannot identify the food clearly, say so.'''
-              }
-            ]
-          }
-        ]
-      });
-
-      final res = await http
-          .post(
-            uri,
-            headers: {'Content-Type': 'application/json'},
-            body: body,
-          )
-          .timeout(const Duration(seconds: 30));
-
-      if (res.statusCode == 200) {
-        final data = jsonDecode(res.body);
-        return data['candidates'][0]['content']['parts'][0]['text'] as String;
-      } else {
-        final error = jsonDecode(res.body);
-        return 'Error: ${error['error']['message'] ?? 'Could not analyze image'}';
-      }
-    } catch (e) {
-      return 'Error: ${e.toString()}';
-    }
+    final result = await analyzeFoodEstimate(imageFile);
+    return 'FOOD: ${result.name}\nCALORIES: ${result.calories} kcal\n'
+        'PROTEIN: ${result.protein}g\nCARBS: ${result.carbs}g\nFAT: ${result.fat}g'
+        '${result.tip == null ? '' : '\nTIP: ${result.tip}'}';
   }
 }
