@@ -29,7 +29,7 @@ Real Android screenshots captured from Allen with test-account data.
 - **Food Scanner:** Camera/gallery input, Gemini nutrition estimates, editing, and confirmed saving to Nutrition.
 - **AI Coach:** Temporary chat with bounded context, loading feedback, safe errors, and retry.
 - **Progress:** Interactive weight charts, date filters, weight logging/editing, and an activity timeline.
-- **Account:** Email/password sign-in, password reset, account-scoped profiles, and local JSON export.
+- **Account:** Firebase registration, sign-in, password reset, session restoration, profile editing, and local JSON export.
 - **Navigation:** Home, Workout, Nutrition, Progress, and Profile destinations.
 
 ## Tech stack
@@ -44,7 +44,13 @@ Real Android screenshots captured from Allen with test-account data.
 
 ## Architecture
 
-Authentication uses `AuthCubit` and `AuthRepo`. Chat and scanning use typed ChangeNotifier controllers; other screens retain local widget state. Models, repositories, and services separate presentation from persistence and external integrations. Fitness records are stored locally; Firebase manages sign-in, without Firestore fitness-data synchronization. Unit and widget tests cover authentication, AI failures, persistence, account transitions, and navigation.
+Authentication uses `AuthCubit` and `AuthRepo`. Chat and Food Scanner use typed ChangeNotifier controllers; other screens retain local widget state. Models, repositories, and services separate presentation from persistence and external integrations. Repositories store fitness records locally with SharedPreferences, while Firebase Authentication manages account access.
+
+## Engineering highlights
+
+- **AI reliability:** Request timeouts and response validation for chat and food analysis, retry actions, and guards against duplicate submissions and stale replies.
+- **Data persistence:** Account-scoped profiles and weight history, stable record IDs, serialized storage writes, and guarded save/edit flows.
+- **Automated testing:** Unit and widget coverage for authentication state changes, Gemini failures, account switching, persistence errors, navigation, keyboard handling, and large-text layouts.
 
 ## Getting started
 
@@ -70,10 +76,4 @@ flutter pub get
 
 To validate locally, run `flutter analyze`, `flutter test`, and `flutter build apk --debug`.
 
-## Project status & known limitations
-
-**Active development — UI/UX and functionality improvements.** The redesigned feature milestones are merged into `main`; live-service, device, and accessibility regression testing remains ongoing.
-
-- Gemini suggestions and photo nutrition are estimates and a protected backend is a future security improvement.
-- Fitness data and exports are local and not additionally encrypted or cloud-synchronized. Exports stay in app-private storage.
-- Chat history is temporary. Notifications support Android permission/status checks and an explicit test; daily reminders are not scheduled. Theme, units, and language are currently fixed.
+Implementation details and security follow-ups are tracked in [technical notes](docs/technical-notes.md).
