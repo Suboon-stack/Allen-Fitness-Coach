@@ -31,3 +31,19 @@ Fitness screens retain StatefulWidget state and their repositories. UserReposito
 Modified: `lib/fitness/theme/app_theme.dart`, `lib/fitness/pages/home_page.dart`, `lib/main.dart`, `test/widget_test.dart`.
 
 Added: `lib/fitness/widgets/allen_components.dart`, `docs/ui-ux/design-system.md`, `docs/ui-ux/redesign-decisions.md`, `docs/ui-ux/screen-inventory.md`.
+
+## Profile & Settings milestone — current additions (6 November 2026)
+
+This section supersedes the historical Stage 1 statuses above for these routes.
+
+| Route/component | Current implementation |
+| --- | --- |
+| ProfilePage | Real identity, owned statistics, saved goal, details/BMI/targets; reference layout, UI/functionality owner-approved |
+| ProfileEditor | Validated optional personal details/targets; UID-owned save; no automatic weight-history insertion |
+| SettingsPage | Fixed appearance/units/language, Android notification permission/status/test, system motion information |
+| AccountSecurityPage | Authenticated email, password-reset email, sign out and unchanged existing Firebase deletion operation |
+| DataPrivacyPage | Local-data disclosures, account-filtered app-private JSON export, unchanged older-cache clear operation |
+| AboutPage | Concise app/version, AI and local-data explanation |
+| FeatureNavigation | Five destinations on Home, Workout, Nutrition, Progress and Profile; nested Profile routes highlight Profile |
+
+No new dependencies or water migration. Profile keys are additive and UID-specific; global legacy data is preserved. Existing Cubit, repositories and Navigator routes remain. See the [case study](profile-settings-redesign.md).

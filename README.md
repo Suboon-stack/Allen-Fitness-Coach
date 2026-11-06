@@ -37,8 +37,8 @@ Cloud Firestore is a dependency and appears in model serializers; current fitnes
 | Food Scanner | Android-tested and owner-approved: embedded camera, gallery selection, explicit photo review/analysis, Gemini nutrition estimates, editing, and confirmed saving to Nutrition Tracker. Safe failures/retry and duplicate/stale-response guards have automated coverage. |
 | AI Coach | Redesigned and UI/UX-approved on Android: original sparkle header, selectable formatted replies, bounded temporary context, safe errors/Retry, and request/account/navigation guards. Automated reliability coverage; no saved conversation archive. |
 | Progress | Design C timeline-style implementation approved for milestone finalization: dated interactive weight chart, owned weight logging/editing, real workout/meal history and goal-backed nutrition metrics. Unowned legacy weights remain stored but excluded; water ownership migration is deferred. |
-| Profile and Settings | Profile editing, BMI, nutrition targets, JSON export, and account controls are implemented; redesign and further verification are upcoming. |
-| Reminders | Immediate notifications and an enable preference exist; recurring daily scheduling is not implemented. |
+| Profile and Settings | Reference-inspired overview, owned profile editing/BMI/targets, account access, privacy/export and settings implemented; UI and functionality owner-approved. |
+| Notifications | Android permission/status and an explicit test notification; recurring daily scheduling is not implemented. |
 
 “Implemented” describes code present, not a guarantee that every device or live-service flow is verified. AI output requires user judgment.
 
@@ -53,7 +53,7 @@ Cloud Firestore is a dependency and appears in model serializers; current fitnes
 - [x] **AI Coach** — Chat redesigned and UI/UX-approved on Android; merged into `main`. See [design, validation and security notes](docs/ui-ux/ai-coach-redesign.md).
 - [x] **Food Scanner** — dashboard, camera and results redesigned; implementation/UI/UX tested and owner-approved on Android. See [design and validation](docs/ui-ux/food-scanner-redesign.md).
 - [x] **Progress** — Design C timeline/chart redesign with account-owned weight logging/editing; owner-approved for milestone finalization, with remaining device-regression checks documented. See [design, data compatibility and checklist](docs/ui-ux/progress-tracking-redesign.md).
-- [ ] **Profile and Settings** — upcoming.
+- [x] **Profile and Settings** — redesigned with account-scoped profiles and five-destination navigation; UI and functionality owner-approved for GitHub finalization. See the [case study](docs/ui-ux/profile-settings-redesign.md).
 
 Checked entries indicate implemented, owner-approved UI rather than completion of the entire feature. Reviewed screens share a centralized Midnight Navy + Electric Blue Material 3 design system. Other routes retain their earlier styling until their own milestone.
 
@@ -119,11 +119,25 @@ The Design C interface combines an original mountain **Your Journey** banner, an
 - **Activity timeline:** Show actual owned weight logs, completed workouts, logged meals and a first-recorded-weight milestone. Planned workout duration is labeled as a plan; no calorie-burn estimate or invented achievement is added.
 - **Meaningful metrics:** Workouts cover the selected period. Today's nutrition/protein rings require actual logged meals and valid account-owned saved targets. There is no invented workout-session or target-weight goal. Protein is a conditional fourth metric.
 
-**Limits:** Personal water history remains unavailable because water totals are shared per device; ownership migration is deferred, and Nutrition/Home water behavior is unchanged. Legacy weights have no automatic claim/migration flow. Other profile, workout and export paths retain documented account-sharing limitations. Records are local rather than cloud-synchronized. Real-device storage/restart, account-transition, chart-gesture and TalkBack regression checks remain separate from automated coverage.
+**Limits:** Personal water history remains unavailable because water totals are shared per device; ownership migration is deferred, and Nutrition/Home water behavior is unchanged. Legacy weights have no automatic claim/migration flow. Older workout-list/mutation paths retain documented account-sharing limitations. Profile storage and personal exports now have the ownership checks described below. Records are local rather than cloud-synchronized. Real-device storage/restart, account-transition, chart-gesture and TalkBack regression checks remain separate from automated coverage.
 
-Publication validation on 6 November 2026: **350 tests passed**, including **45 Progress tests**; formatting and the Android debug build passed. Analysis retains **7 existing diagnostics** (4 warnings, 3 infos), with no errors or new Progress diagnostics.
+Publication validation on 6 November 2026: **350 tests passed**, including **45 Progress tests**; formatting and the Android debug build passed. At that milestone, analysis reported **7 existing diagnostics** (4 warnings, 3 infos), with no errors or new Progress diagnostics; the Profile & Settings milestone below removes those diagnostics.
 
 See the [Progress case study, validation and compatibility notes](docs/ui-ux/progress-tracking-redesign.md) and [audit/repair root causes](docs/ui-ux/progress-tracking-audit.md). No Progress screenshots or specific device-test outcomes are claimed without evidence.
+
+## Profile & Settings
+
+The Profile overview shows the authenticated name/email, account-owned completed workouts, latest weight and a streak derived from recorded workout dates. Saved fitness goals and nutrition targets appear only when actually set. A keyboard-safe personal-details editor preserves profile measurements, BMI and optional targets. Registration now attempts Firebase display-name persistence without treating a supplementary name-update failure as failed account creation.
+
+New local profiles are keyed by Firebase UID with authenticated read/write checks. The shared legacy profile is retained unchanged and read only when its existing owner matches. Nutrition and Progress use the same account-specific target lookup. Home's workout counts/streaks now use owner-filtered completions too.
+
+Settings displays the fixed Midnight Navy/Electric Blue identity, Metric/English and system motion preferences. Android notification permission/status and an explicit test action replace the misleading daily-reminder toggle. Account & Security offers Firebase password-reset email and reconciled sign out; it does not claim MFA, device management or a verified protection status.
+
+Data & Privacy explains storage limits and exports matching-owner profile/workout/meal/weight JSON into Allen's private app Documents folder. Shared water and unowned/foreign records are excluded. External file sharing, encrypted exports and cloud backup are not implemented. Existing account deletion and older weight-cache clear retain their original effects; they do not purge current local fitness history.
+
+The shared bottom navigation is **Home | Workout | Nutrition | Progress | Profile**. Existing routes and the drawer remain available. The owner has reviewed and approved the UI and functionality for GitHub finalization. Detailed device/live-service test outcomes and current screenshots have not been supplied; targeted regression checks remain documented separately. See [decisions and validation](docs/ui-ux/profile-settings-redesign.md) and the separate [repair record](docs/ui-ux/profile-settings-repairs.md).
+
+Profile & Settings finalization validation on 6 November 2026: **395 tests passed**, including **45 new milestone tests**; **0 analyzer diagnostics**. Formatting and the Android debug build passed.
 
 ## Current Development
 
@@ -143,14 +157,14 @@ Current Midnight screenshots have not been added. Place actual Android captures 
 
 ## Known Issues
 
-- Local fitness/profile data is not consistently isolated per account. Nutrition meal reads now filter existing owner IDs; weight reads now filter owners too; water, profile storage and some workout/export paths still have shared-data limitations. A separate ownership/migration plan is needed; no existing records are migrated or deleted.
-- New weight records have owner/UUID metadata for reliable editing/deletion. Existing unowned weights are retained without reassignment and excluded from personal summaries. The Settings clear-weight action still uses a legacy storage path.
+- Account isolation is incomplete across the app. Profiles, personal exports, meal/weight reads and workout statistics now filter ownership. Water and older workout-list/mutation paths retain shared-data limitations. No unowned legacy records are automatically assigned or migrated.
+- New weight records have owner/UUID metadata for reliable editing/deletion. Existing unowned weights are retained without reassignment and excluded from personal summaries. The existing older-cache clear operation still targets `weight_logs`, not current `weights`; its disclosure now explains that limitation.
 - Quote failures can still use predefined fallbacks. Workout/meal generation, AI Coach Chat and Food Scanner report failures explicitly; the quote fallback remains separate.
 - Food-image nutrition is an estimate, not independently verified data. No saved photo/scan archive is implemented; the Gemini key remains extractable from the client until a backend gateway is introduced.
 - Recurring daily reminders are not implemented.
-- The registration name is collected but not persisted by the authentication repository.
+- Firebase registration-name persistence is best-effort; older accounts are not automatically backfilled. Avatar upload and broader security/customization controls are deferred.
 - Workout history retains the existing latest-50 limit. Live Gemini output, real app-restart persistence, TalkBack, and full authentication flows need further device verification.
-- Full-project analysis reports seven existing diagnostics in Profile and Settings; the Progress redesign introduces no new diagnostics. Current Nutrition checks are recorded in the [approved Nutrition milestone](docs/ui-ux/approved-nutrition-milestone.md); the previous approved milestone has a separate [release review](docs/ui-ux/approved-midnight-milestone.md).
+- Profile & Settings validation is documented in its [case study](docs/ui-ux/profile-settings-redesign.md). Historical milestone test/analyzer results remain in their dated records; targeted live Firebase, notification delivery and accessibility regression coverage remains separate from owner approval.
 
 The dashboard statistics-source mismatch and workout completion UUID bug have targeted fixes and regression coverage. Their root causes and scope are documented separately from visual decisions.
 
@@ -201,7 +215,7 @@ flutter test
 flutter build apk --debug
 ```
 
-Tests use test doubles and isolated storage; they do not prove live Firebase/Gemini availability or exercise real user records. See the [Food Scanner case study and validation](docs/ui-ux/food-scanner-redesign.md), [AI Coach milestone review](docs/ui-ux/approved-ai-coach-milestone.md), [Nutrition milestone](docs/ui-ux/approved-nutrition-milestone.md), and [earlier UI milestone](docs/ui-ux/approved-midnight-milestone.md) for executed results and remaining manual checks.
+Tests use test doubles and isolated storage; they do not prove live Firebase/Gemini availability or exercise real user records. See the [Profile & Settings case study and validation](docs/ui-ux/profile-settings-redesign.md), [Food Scanner case study and validation](docs/ui-ux/food-scanner-redesign.md), [AI Coach milestone review](docs/ui-ux/approved-ai-coach-milestone.md), [Nutrition milestone](docs/ui-ux/approved-nutrition-milestone.md), and [earlier UI milestone](docs/ui-ux/approved-midnight-milestone.md) for executed results and remaining manual checks.
 
 ## Development Notes
 

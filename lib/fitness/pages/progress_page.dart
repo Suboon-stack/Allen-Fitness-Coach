@@ -1,3 +1,4 @@
+import '../widgets/feature_navigation.dart';
 import 'dart:async';
 import 'package:allen/features/auth/presentation/cubits/auth_cubit.dart';
 import 'package:allen/features/auth/presentation/cubits/auth_state.dart';
@@ -13,8 +14,6 @@ import '../widgets/progress_journey.dart';
 import '../widgets/progress_metrics.dart';
 import '../widgets/progress_timeline.dart';
 import '../widgets/weight_entry_sheet.dart';
-import 'meal_planner_page.dart';
-import 'workout_page.dart';
 
 class ProgressPage extends StatefulWidget {
   const ProgressPage({super.key, this.repository, this.now});
@@ -177,12 +176,6 @@ class _ProgressPageState extends State<ProgressPage>
     }
   }
 
-  Future<void> _open(Widget page) async {
-    await Navigator.of(context)
-        .push(MaterialPageRoute<void>(builder: (_) => page));
-    if (mounted && !_closed) await _load();
-  }
-
   Future<void> _details(BuildContext context) async {
     final owner = _verifiedUser();
     if (owner == null || _snapshot == null) return;
@@ -276,34 +269,8 @@ class _ProgressPageState extends State<ProgressPage>
                                   ])),
                       icon: const Icon(Icons.info_outline))
                 ]),
-                bottomNavigationBar: NavigationBar(
-                    selectedIndex: 3,
-                    labelBehavior: MediaQuery.textScalerOf(context).scale(12) >
-                            18
-                        ? NavigationDestinationLabelBehavior.onlyShowSelected
-                        : NavigationDestinationLabelBehavior.alwaysShow,
-                    onDestinationSelected: (index) {
-                      switch (index) {
-                        case 0:
-                          Navigator.of(context)
-                              .popUntil((route) => route.isFirst);
-                        case 1:
-                          _open(const WorkoutPage());
-                        case 2:
-                          _open(const MealPlannerPage());
-                      }
-                    },
-                    destinations: const [
-                      NavigationDestination(
-                          icon: Icon(Icons.home_outlined), label: 'Home'),
-                      NavigationDestination(
-                          icon: Icon(Icons.fitness_center), label: 'Workouts'),
-                      NavigationDestination(
-                          icon: Icon(Icons.restaurant_outlined),
-                          label: 'Nutrition'),
-                      NavigationDestination(
-                          icon: Icon(Icons.insights), label: 'Progress')
-                    ]),
+                bottomNavigationBar:
+                    FeatureNavigation(index: 3, onReturn: _load),
                 body: SafeArea(
                     top: false,
                     bottom: false,

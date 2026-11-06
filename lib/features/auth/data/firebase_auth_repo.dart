@@ -3,7 +3,9 @@ import 'package:allen/features/auth/domain/repo/auth_repo.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 
 class FirebaseAuthRepo implements AuthRepo {
-  final FirebaseAuth firebaseAuth = FirebaseAuth.instance;
+  FirebaseAuthRepo({FirebaseAuth? firebaseAuth})
+      : firebaseAuth = firebaseAuth ?? FirebaseAuth.instance;
+  final FirebaseAuth firebaseAuth;
 
   @override
   Future<void> deleteAccount() async {
@@ -20,7 +22,8 @@ class FirebaseAuthRepo implements AuthRepo {
   Future<AppUser?> getCurrentUser() async {
     final user = firebaseAuth.currentUser;
     if (user == null) return null;
-    return AppUser(uid: user.uid, email: user.email ?? '');
+    return AppUser(
+        uid: user.uid, email: user.email ?? '', displayName: user.displayName);
   }
 
   @override
@@ -30,7 +33,10 @@ class FirebaseAuthRepo implements AuthRepo {
     final user = credential.user;
     return user == null
         ? null
-        : AppUser(uid: user.uid, email: user.email ?? email);
+        : AppUser(
+            uid: user.uid,
+            email: user.email ?? email,
+            displayName: user.displayName);
   }
 
   @override
@@ -42,11 +48,17 @@ class FirebaseAuthRepo implements AuthRepo {
     final credential = await firebaseAuth.createUserWithEmailAndPassword(
         email: email, password: password);
     final user = credential.user;
-    // Existing name/profile persistence is deliberately deferred: no schema or
-    // local account ownership changes are part of this authentication stage.
-    return user == null
-        ? null
-        : AppUser(uid: user.uid, email: user.email ?? email);
+    if (user != null &&
+        firebaseAuth.currentUser?.uid == user.uid &&
+        name.trim().isNotEmpty) {
+      try {
+        await user.updateDisplayName(name.trim());
+      } catch (_) {
+        // Account creation already succeeded. Supplementary name persistence
+        // must not turn a real signed-in session into a registration failure.
+      }
+    }
+    return getCurrentUser();
   }
 
   @override

@@ -105,3 +105,22 @@ Use the owner's `Dark Navy Fitness Progress Dashboard.png` as a concept referenc
 - [ ] Small screen, landscape, 200% text, safe areas and TalkBack.
 
 Capture genuine Android renders after installation, record the device/build and remove private notes/account information. Temporary test-fixture renders do not demonstrate native storage, live Firebase behavior or real-device appearance.
+
+## Profile & Settings — owner-approved; captures pending
+
+Reference: `Profile Settings Redesign Trio.png`. Capture actual app renders; the concept is not implementation evidence.
+
+- [ ] Before: legacy profile editor, notification toggle and data/account controls.
+- [ ] Profile identity/initials, owned statistics and an actual saved goal; redact name/email.
+- [ ] Profile with no local details/weight/goal, loading, sanitized error and retry.
+- [ ] Personal-details editor, optional targets, BMI, invalid inputs and keyboard-safe Save.
+- [ ] Two accounts with different saved profiles/targets and no foreign statistics.
+- [ ] Legacy profile bytes retained, unowned records excluded, no automatic claiming.
+- [ ] Settings groups, fixed appearance/units/language and system reduced motion.
+- [ ] Android notification permission allowed/denied, explicit test, settings return/restart.
+- [ ] Account & Security reset success/error/loading and sign-out failure/success.
+- [ ] Data & Privacy account-only export confirmation and shared-water explanation.
+- [ ] About, five-destination navigation and return to an existing Workout Saved tab.
+- [ ] Small phone, landscape, 200% font, TalkBack, keyboard and system insets.
+
+Suggested paths: `screenshots/midnight-profile.png`, `midnight-settings.png`, `midnight-account-security.png`, `midnight-profile-edit.png`, `midnight-data-privacy.png`. Remove personal data and record device/build. The owner approved the UI and functionality for GitHub finalization on 6 November 2026. Individual device-matrix results and screenshots were not supplied; unchecked items remain capture/regression reminders.

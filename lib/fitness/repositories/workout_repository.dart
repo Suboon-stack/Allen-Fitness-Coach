@@ -1,3 +1,5 @@
+import 'progress_repository.dart';
+import '../models/profile_overview_data.dart';
 import 'package:allen/fitness/models/workout_model.dart';
 import 'package:allen/fitness/services/local_storage_service.dart';
 import 'package:uuid/uuid.dart';
@@ -133,8 +135,10 @@ class WorkoutRepository {
         await _local.saveWorkouts(workouts);
       });
 
-  Future<int> getWorkoutCount(String userId) => _local.getWorkoutCount();
-  Future<int> getCurrentStreak(String userId) => _local.getStreak();
+  Future<int> getWorkoutCount(String userId) async =>
+      (await ProgressRepository().getCompletedWorkouts(userId)).length;
+  Future<int> getCurrentStreak(String userId) async => ownedWorkoutStreak(
+      await ProgressRepository().getCompletedWorkouts(userId), DateTime.now());
 
   Future<int> getTotalMinutes(String userId) async {
     final workouts = await getUserWorkouts(userId);

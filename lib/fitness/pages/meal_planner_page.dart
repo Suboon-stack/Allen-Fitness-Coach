@@ -1,3 +1,4 @@
+import '../widgets/feature_navigation.dart';
 import 'dart:async';
 import 'package:allen/features/auth/presentation/cubits/auth_cubit.dart';
 import 'package:allen/features/auth/presentation/cubits/auth_state.dart';
@@ -126,7 +127,7 @@ class _MealPlannerPageState extends State<MealPlannerPage>
       var failedGoals = false;
       try {
         goals = NutritionGoals.fromStoredProfile(
-            await _local.getUserProfile(), user.uid);
+            await _local.getUserProfile(userId: user.uid), user.uid);
       } catch (_) {
         failedGoals = true;
       }
@@ -280,6 +281,8 @@ class _MealPlannerPageState extends State<MealPlannerPage>
                           Tab(text: 'Planner'),
                           Tab(text: 'Water')
                         ])),
+                    bottomNavigationBar:
+                        FeatureNavigation(index: 2, onReturn: _refresh),
                     body: SafeArea(
                         top: false,
                         child: TabBarView(controller: _tabs, children: [
