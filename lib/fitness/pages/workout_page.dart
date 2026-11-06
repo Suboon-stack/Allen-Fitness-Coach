@@ -1,3 +1,4 @@
+import '../widgets/feature_navigation.dart';
 import 'package:allen/features/auth/presentation/cubits/auth_cubit.dart';
 import 'package:allen/fitness/models/workout_model.dart';
 import 'package:allen/fitness/repositories/workout_repository.dart';
@@ -286,7 +287,10 @@ class _WorkoutPageState extends State<WorkoutPage>
                 _savedWorkouts(context),
               ])),
           bottomNavigationBar:
-              _draft != null && _visibleTab == 0 ? _saveActions(context) : null,
+              Column(mainAxisSize: MainAxisSize.min, children: [
+            if (_draft != null && _visibleTab == 0) _saveActions(context),
+            const FeatureNavigation(index: 1),
+          ]),
         ),
       );
 

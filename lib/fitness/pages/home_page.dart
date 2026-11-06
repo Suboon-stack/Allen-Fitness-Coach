@@ -1,3 +1,5 @@
+import '../widgets/feature_navigation.dart';
+import '../../features/auth/presentation/cubits/auth_state.dart';
 import 'package:allen/features/auth/presentation/cubits/auth_cubit.dart';
 import 'package:allen/fitness/pages/chat_page.dart';
 import 'package:allen/fitness/pages/meal_planner_page.dart';
@@ -44,6 +46,8 @@ class _HomePageState extends State<HomePage> {
   bool _loading = true;
   bool _failed = false;
   bool _quoteLoading = false;
+  int _activityRequest = 0;
+  String? _activityOwner;
 
   @override
   void initState() {
@@ -54,7 +58,13 @@ class _HomePageState extends State<HomePage> {
 
   Future<void> _loadData() async {
     final user = context.read<AuthCubit>().currentUser;
+    final request = ++_activityRequest;
+    _activityOwner = user?.uid;
     setState(() {
+      _workoutCount = 0;
+      _streak = 0;
+      _water = 0;
+      _currentWeight = null;
       _loading = true;
       _failed = false;
     });
@@ -72,7 +82,11 @@ class _HomePageState extends State<HomePage> {
         _workouts.getCurrentStreak(user.uid),
         _progress.getTodayWaterIntake(user.uid),
       ).wait;
-      if (!mounted) return;
+      if (!mounted ||
+          request != _activityRequest ||
+          context.read<AuthCubit>().currentUser?.uid != user.uid) {
+        return;
+      }
       setState(() {
         _workoutCount = count;
         _currentWeight = weight?.weight;
@@ -81,7 +95,11 @@ class _HomePageState extends State<HomePage> {
         _loading = false;
       });
     } catch (_) {
-      if (!mounted) return;
+      if (!mounted ||
+          request != _activityRequest ||
+          context.read<AuthCubit>().currentUser?.uid != user.uid) {
+        return;
+      }
       setState(() {
         _failed = true;
         _loading = false;
@@ -124,8 +142,12 @@ class _HomePageState extends State<HomePage> {
   }
 
   @override
-  Widget build(BuildContext context) => AppThemeScope(
-        child: Builder(builder: _buildDashboard),
+  Widget build(BuildContext context) => BlocListener<AuthCubit, AuthState>(
+        listener: (_, state) {
+          final owner = context.read<AuthCubit>().currentUser?.uid;
+          if (owner != _activityOwner) _loadData();
+        },
+        child: AppThemeScope(child: Builder(builder: _buildDashboard)),
       );
 
   Widget _buildDashboard(BuildContext context) {
@@ -150,37 +172,7 @@ class _HomePageState extends State<HomePage> {
         ],
       ),
       drawer: _drawer(context),
-      bottomNavigationBar: NavigationBar(
-        height: 72,
-        selectedIndex: 0,
-        backgroundColor: colors.surface,
-        indicatorColor: colors.secondaryContainer,
-        labelBehavior: MediaQuery.textScalerOf(context).scale(12) > 18
-            ? NavigationDestinationLabelBehavior.onlyShowSelected
-            : NavigationDestinationLabelBehavior.alwaysShow,
-        onDestinationSelected: (index) {
-          switch (index) {
-            case 1:
-              _open(const WorkoutPage());
-            case 2:
-              _open(const MealPlannerPage());
-            case 3:
-              _open(const ProgressPage());
-          }
-        },
-        destinations: const [
-          NavigationDestination(
-              icon: Icon(Icons.home_outlined),
-              selectedIcon: Icon(Icons.home_rounded),
-              label: 'Home'),
-          NavigationDestination(
-              icon: Icon(Icons.fitness_center_rounded), label: 'Workouts'),
-          NavigationDestination(
-              icon: Icon(Icons.restaurant_outlined), label: 'Nutrition'),
-          NavigationDestination(
-              icon: Icon(Icons.insights_outlined), label: 'Progress'),
-        ],
-      ),
+      bottomNavigationBar: FeatureNavigation(index: 0, onReturn: _loadData),
       body: SafeArea(
           top: false,
           bottom: false,

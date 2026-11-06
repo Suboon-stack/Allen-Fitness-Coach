@@ -1,622 +1,395 @@
-import 'package:allen/features/auth/data/user_repository.dart';
-import 'package:allen/features/auth/presentation/cubits/auth_cubit.dart';
-import 'package:allen/fitness/models/user_profile_model.dart';
-import 'package:allen/fitness/repositories/workout_repository.dart';
-import 'package:allen/fitness/repositories/progress_repository.dart';
-import 'package:allen/pallete.dart';
 import 'package:flutter/material.dart';
-import 'package:flutter_bloc/flutter_bloc.dart';
+import '../../features/auth/data/user_repository.dart';
+import '../../features/auth/domain/entities/app_user.dart';
+import '../models/user_profile_model.dart';
+import '../models/profile_overview_data.dart';
+import '../repositories/progress_repository.dart';
+import '../theme/app_theme.dart';
+import '../widgets/feature_navigation.dart';
+import '../widgets/profile_components.dart';
+import '../widgets/profile_edit_sheet.dart';
+import 'settings_page.dart';
+import 'account_security_page.dart';
+import 'data_privacy_page.dart';
+import 'about_page.dart';
 
-class ProfilePage extends StatefulWidget {
-  const ProfilePage({super.key});
-
+class ProfilePage extends StatelessWidget {
+  const ProfilePage({super.key, this.repository, this.progressRepository});
+  final UserRepository? repository;
+  final ProgressRepository? progressRepository;
   @override
-  State<ProfilePage> createState() => _ProfilePageState();
+  Widget build(BuildContext context) => AccountBoundary(
+      builder: (context, user) => _ProfileOverview(
+          user: user,
+          repository: repository ?? UserRepository(),
+          progress: progressRepository ?? ProgressRepository()));
 }
 
-class _ProfilePageState extends State<ProfilePage> {
-  final UserRepository _userRepo = UserRepository();
-  final WorkoutRepository _workoutRepo = WorkoutRepository();
-  final ProgressRepository _progressRepo = ProgressRepository();
+class _ProfileOverview extends StatefulWidget {
+  const _ProfileOverview(
+      {required this.user, required this.repository, required this.progress});
+  final AppUser user;
+  final UserRepository repository;
+  final ProgressRepository progress;
+  @override
+  State<_ProfileOverview> createState() => _ProfileOverviewState();
+}
 
+class _ProfileOverviewState extends State<_ProfileOverview>
+    with WidgetsBindingObserver {
   UserProfile? _profile;
-  int _workoutCount = 0;
-  int _streak = 0;
-  double? _currentWeight;
   bool _loading = true;
-  bool _isEditing = false;
-
-  final _formKey = GlobalKey<FormState>();
-  final _nameController = TextEditingController();
-  final _ageController = TextEditingController();
-  final _heightController = TextEditingController();
-  final _weightController = TextEditingController();
-  final _targetCaloriesController = TextEditingController();
-  final _targetProteinController = TextEditingController();
-  final _targetCarbsController = TextEditingController();
-  final _targetFatController = TextEditingController();
-
-  String _selectedGender = 'Male';
-  String _selectedGoal = 'Maintain Weight';
-
+  String? _error;
+  int _request = 0;
+  int? _count, _streak;
+  double? _weight;
+  bool _valid(int request) =>
+      mounted &&
+      request == _request &&
+      verifiedAccount(context)?.uid == widget.user.uid;
   @override
   void initState() {
     super.initState();
-    _loadData();
-  }
-
-  Future<void> _loadData() async {
-    final user = context.read<AuthCubit>().currentUser;
-    if (user == null) {
-      setState(() => _loading = false);
-      return;
-    }
-
-    final profile = await _userRepo.getUserProfile(user.uid);
-    final count = await _workoutRepo.getWorkoutCount(user.uid);
-    final streak = await _workoutRepo.getCurrentStreak(user.uid);
-    final weight = await _progressRepo.getLatestWeight(user.uid);
-
-    if (!mounted) return;
-    setState(() {
-      _profile = profile;
-      _workoutCount = count;
-      _streak = streak;
-      _currentWeight = weight?.weight;
-      _loading = false;
-
-      if (profile != null) {
-        _nameController.text = profile.name ?? '';
-        _ageController.text = profile.age?.toString() ?? '';
-        _heightController.text = profile.height?.toString() ?? '';
-        _weightController.text = profile.weight?.toString() ?? '';
-        _targetCaloriesController.text =
-            profile.targetCalories?.toString() ?? '2000';
-        _targetProteinController.text =
-            profile.targetProtein?.toString() ?? '150';
-        _targetCarbsController.text = profile.targetCarbs?.toString() ?? '250';
-        _targetFatController.text = profile.targetFat?.toString() ?? '65';
-        _selectedGender = profile.gender ?? 'Male';
-        _selectedGoal = profile.goal ?? 'Maintain Weight';
-      }
-    });
-  }
-
-  Future<void> _saveProfile() async {
-    final user = context.read<AuthCubit>().currentUser;
-    if (user == null) return;
-
-    final profile = UserProfile(
-      id: _profile?.id ?? user.uid,
-      email: user.email ?? '',
-      name: _nameController.text.isNotEmpty ? _nameController.text : null,
-      age: int.tryParse(_ageController.text),
-      height: double.tryParse(_heightController.text),
-      weight: double.tryParse(_weightController.text),
-      gender: _selectedGender,
-      goal: _selectedGoal,
-      targetCalories: int.tryParse(_targetCaloriesController.text),
-      targetProtein: double.tryParse(_targetProteinController.text),
-      targetCarbs: double.tryParse(_targetCarbsController.text),
-      targetFat: double.tryParse(_targetFatController.text),
-      createdAt: _profile?.createdAt ?? DateTime.now(),
-      updatedAt: DateTime.now(),
-    );
-
-    if (_profile == null) {
-      await _userRepo.createUserProfile(profile);
-    } else {
-      await _userRepo.updateUserProfile(profile);
-    }
-
-    setState(() {
-      _profile = profile;
-      _isEditing = false;
-      _currentWeight = profile.weight;
-    });
+    WidgetsBinding.instance.addObserver(this);
+    _load();
   }
 
   @override
-  Widget build(BuildContext context) {
-    final user = context.read<AuthCubit>().currentUser;
-
-    return Scaffold(
-      backgroundColor: Pallete.backgroundColor,
-      appBar: AppBar(
-        backgroundColor: Pallete.surfaceColor,
-        title: const Text('Profile'),
-        actions: [
-          IconButton(
-            icon: Icon(_isEditing ? Icons.close : Icons.edit),
-            onPressed: () => setState(() => _isEditing = !_isEditing),
-          ),
-        ],
-        bottom: const PreferredSize(
-          preferredSize: Size.fromHeight(1),
-          child: Divider(height: 1, color: Pallete.borderColor),
-        ),
-      ),
-      body: _loading
-          ? const Center(child: CircularProgressIndicator())
-          : SingleChildScrollView(
-              padding: const EdgeInsets.all(24),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  _buildProfileHeader(user),
-                  const SizedBox(height: 24),
-                  _buildStatsRow(),
-                  const SizedBox(height: 24),
-                  if (_isEditing) _buildEditForm() else _buildProfileInfo(),
-                  const SizedBox(height: 24),
-                  _buildBMICard(),
-                  const SizedBox(height: 24),
-                  _buildMacroTargets(),
-                  const SizedBox(height: 30),
-                  _buildLogoutButton(),
-                ],
-              ),
-            ),
-    );
-  }
-
-  Widget _buildProfileHeader(user) {
-    return Center(
-      child: Column(
-        children: [
-          Container(
-            padding: const EdgeInsets.all(3),
-            decoration: BoxDecoration(
-              shape: BoxShape.circle,
-              border: Border.all(color: Pallete.primaryAccent, width: 2),
-            ),
-            child: CircleAvatar(
-              radius: 50,
-              backgroundColor: Pallete.cardColor,
-              child: Text(
-                _profile?.name?.isNotEmpty == true
-                    ? _profile!.name![0].toUpperCase()
-                    : (user?.email.substring(0, 1).toUpperCase() ?? 'A'),
-                style: const TextStyle(
-                  fontSize: 36,
-                  fontWeight: FontWeight.bold,
-                  color: Pallete.primaryAccent,
-                ),
-              ),
-            ),
-          ),
-          const SizedBox(height: 16),
-          Text(
-            _profile?.name ?? user?.email ?? 'User',
-            style: const TextStyle(
-              color: Pallete.mainFontColor,
-              fontSize: 22,
-              fontWeight: FontWeight.bold,
-            ),
-          ),
-          if (_profile?.goal != null) ...[
-            const SizedBox(height: 6),
-            Container(
-              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
-              decoration: BoxDecoration(
-                color: Pallete.successColor.withValues(alpha: 0.15),
-                borderRadius: BorderRadius.circular(20),
-              ),
-              child: Text(
-                'Goal: ${_profile!.goal}',
-                style:
-                    const TextStyle(color: Pallete.successColor, fontSize: 12),
-              ),
-            ),
-          ],
-        ],
-      ),
-    );
-  }
-
-  Widget _buildStatsRow() {
-    return Row(
-      children: [
-        _statCard('$_workoutCount', 'Workouts', Icons.fitness_center_rounded),
-        const SizedBox(width: 10),
-        _statCard(
-          _currentWeight != null
-              ? '${_currentWeight!.toStringAsFixed(1)}kg'
-              : '--',
-          'Weight',
-          Icons.monitor_weight_outlined,
-        ),
-        const SizedBox(width: 10),
-        _statCard('$_streak', 'Streak', Icons.local_fire_department_rounded),
-      ],
-    );
-  }
-
-  Widget _statCard(String value, String label, IconData icon) {
-    return Expanded(
-      child: Container(
-        padding: const EdgeInsets.symmetric(vertical: 14, horizontal: 8),
-        decoration: BoxDecoration(
-          color: Pallete.cardColor,
-          borderRadius: BorderRadius.circular(12),
-          border: Border.all(color: Pallete.borderColor),
-        ),
-        child: Column(
-          children: [
-            Icon(icon, color: Pallete.primaryAccent, size: 18),
-            const SizedBox(height: 6),
-            Text(value,
-                style: const TextStyle(
-                    color: Pallete.mainFontColor,
-                    fontSize: 15,
-                    fontWeight: FontWeight.bold)),
-            Text(label,
-                style:
-                    const TextStyle(color: Pallete.subFontColor, fontSize: 10)),
-          ],
-        ),
-      ),
-    );
-  }
-
-  Widget _buildEditForm() {
-    return Form(
-      key: _formKey,
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          const Text('Edit Profile',
-              style: TextStyle(
-                  color: Pallete.mainFontColor,
-                  fontSize: 18,
-                  fontWeight: FontWeight.bold)),
-          const SizedBox(height: 16),
-          _buildTextField(_nameController, 'Name'),
-          _buildTextField(_ageController, 'Age',
-              keyboardType: TextInputType.number),
-          _buildTextField(_heightController, 'Height (cm)',
-              keyboardType: TextInputType.number),
-          _buildTextField(_weightController, 'Weight (kg)',
-              keyboardType: TextInputType.number),
-          const SizedBox(height: 16),
-          const Text('Gender', style: TextStyle(color: Pallete.subFontColor)),
-          const SizedBox(height: 8),
-          Row(
-            children: ['Male', 'Female', 'Other']
-                .map((g) => Expanded(
-                      child: Padding(
-                        padding: const EdgeInsets.symmetric(horizontal: 4),
-                        child: ChoiceChip(
-                          label: Text(g),
-                          selected: _selectedGender == g,
-                          onSelected: (selected) =>
-                              setState(() => _selectedGender = g),
-                          selectedColor: Pallete.primaryAccent,
-                        ),
-                      ),
-                    ))
-                .toList(),
-          ),
-          const SizedBox(height: 16),
-          const Text('Goal', style: TextStyle(color: Pallete.subFontColor)),
-          const SizedBox(height: 8),
-          DropdownButtonFormField<String>(
-            value: _selectedGoal,
-            decoration: InputDecoration(
-              filled: true,
-              fillColor: Pallete.cardColor,
-              border:
-                  OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
-            ),
-            items: ['Lose Weight', 'Maintain Weight', 'Gain Muscle']
-                .map((g) => DropdownMenuItem(value: g, child: Text(g)))
-                .toList(),
-            onChanged: (v) => setState(() => _selectedGoal = v!),
-          ),
-          const SizedBox(height: 24),
-          SizedBox(
-            width: double.infinity,
-            child: ElevatedButton(
-              onPressed: _saveProfile,
-              style: ElevatedButton.styleFrom(
-                backgroundColor: Pallete.primaryAccent,
-                padding: const EdgeInsets.symmetric(vertical: 14),
-                shape: RoundedRectangleBorder(
-                    borderRadius: BorderRadius.circular(12)),
-              ),
-              child: const Text('Save Profile',
-                  style: TextStyle(
-                      color: Colors.black, fontWeight: FontWeight.bold)),
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-
-  Widget _buildTextField(TextEditingController controller, String label,
-      {TextInputType? keyboardType}) {
-    return Padding(
-      padding: const EdgeInsets.only(bottom: 12),
-      child: TextFormField(
-        controller: controller,
-        keyboardType: keyboardType,
-        style: const TextStyle(color: Pallete.mainFontColor),
-        decoration: InputDecoration(
-          labelText: label,
-          labelStyle: const TextStyle(color: Pallete.subFontColor),
-          filled: true,
-          fillColor: Pallete.cardColor,
-          border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
-        ),
-      ),
-    );
-  }
-
-  Widget _buildProfileInfo() {
-    return Column(
-      children: [
-        _infoCard(
-            icon: Icons.email_outlined,
-            label: 'Email',
-            value: _profile?.email ?? 'Not available'),
-        const SizedBox(height: 10),
-        _infoCard(
-            icon: Icons.cake_outlined,
-            label: 'Age',
-            value: _profile?.age?.toString() ?? 'Not set'),
-        const SizedBox(height: 10),
-        _infoCard(
-            icon: Icons.height_outlined,
-            label: 'Height',
-            value:
-                _profile?.height != null ? '${_profile!.height}cm' : 'Not set'),
-        const SizedBox(height: 10),
-        _infoCard(
-            icon: Icons.monitor_weight_outlined,
-            label: 'Current Weight',
-            value:
-                _profile?.weight != null ? '${_profile!.weight}kg' : 'Not set'),
-        const SizedBox(height: 10),
-        _infoCard(
-            icon: Icons.wc_outlined,
-            label: 'Gender',
-            value: _profile?.gender ?? 'Not set'),
-        const SizedBox(height: 10),
-        _infoCard(
-            icon: Icons.flag_outlined,
-            label: 'Goal',
-            value: _profile?.goal ?? 'Not set'),
-      ],
-    );
-  }
-
-  Widget _buildBMICard() {
-    final bmi = _profile?.bmi;
-    final category = _profile?.bmiCategory;
-
-    return Container(
-      width: double.infinity,
-      padding: const EdgeInsets.all(20),
-      decoration: BoxDecoration(
-        color: Pallete.cardColor,
-        borderRadius: BorderRadius.circular(16),
-        border: Border.all(color: Pallete.borderColor),
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          const Row(
-            children: [
-              Icon(Icons.analytics_outlined, color: Pallete.primaryAccent),
-              SizedBox(width: 8),
-              Text('BMI Calculator',
-                  style: TextStyle(
-                      color: Pallete.mainFontColor,
-                      fontSize: 16,
-                      fontWeight: FontWeight.bold)),
-            ],
-          ),
-          const SizedBox(height: 16),
-          if (bmi != null) ...[
-            Row(
-              mainAxisAlignment: MainAxisAlignment.spaceBetween,
-              children: [
-                Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(bmi.toStringAsFixed(1),
-                        style: const TextStyle(
-                            color: Pallete.mainFontColor,
-                            fontSize: 32,
-                            fontWeight: FontWeight.bold)),
-                    Text(category ?? '',
-                        style: const TextStyle(
-                            color: Pallete.successColor, fontSize: 14)),
-                  ],
-                ),
-                _buildBMIScale(bmi),
-              ],
-            ),
-          ] else ...[
-            const Text('Add your height and weight to calculate BMI',
-                style: TextStyle(color: Pallete.subFontColor)),
-          ],
-        ],
-      ),
-    );
-  }
-
-  Widget _buildBMIScale(double bmi) {
-    return Container(
-      width: 120,
-      height: 8,
-      decoration: BoxDecoration(
-        borderRadius: BorderRadius.circular(4),
-        gradient: const LinearGradient(
-            colors: [Colors.blue, Colors.green, Colors.orange, Colors.red]),
-      ),
-      child: Stack(
-        children: [
-          Positioned(
-            left: (bmi.clamp(15, 35) - 15) * 4,
-            child: Container(
-                width: 12,
-                height: 12,
-                decoration: const BoxDecoration(
-                    color: Colors.white, shape: BoxShape.circle)),
-          ),
-        ],
-      ),
-    );
-  }
-
-  Widget _buildMacroTargets() {
-    return Container(
-      width: double.infinity,
-      padding: const EdgeInsets.all(20),
-      decoration: BoxDecoration(
-        color: Pallete.cardColor,
-        borderRadius: BorderRadius.circular(16),
-        border: Border.all(color: Pallete.borderColor),
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          const Row(
-            children: [
-              Icon(Icons.restaurant_menu_outlined,
-                  color: Pallete.primaryAccent),
-              SizedBox(width: 8),
-              Text('Daily Targets',
-                  style: TextStyle(
-                      color: Pallete.mainFontColor,
-                      fontSize: 16,
-                      fontWeight: FontWeight.bold)),
-            ],
-          ),
-          const SizedBox(height: 16),
-          Row(
-            children: [
-              _macroItem(
-                  'Calories',
-                  _profile?.targetCalories?.toString() ?? '2000',
-                  'kcal',
-                  Colors.orange),
-              _macroItem(
-                  'Protein',
-                  _profile?.targetProtein?.toString() ?? '150',
-                  'g',
-                  Colors.red),
-              _macroItem('Carbs', _profile?.targetCarbs?.toString() ?? '250',
-                  'g', Colors.blue),
-              _macroItem('Fat', _profile?.targetFat?.toString() ?? '65', 'g',
-                  Colors.green),
-            ],
-          ),
-        ],
-      ),
-    );
-  }
-
-  Widget _macroItem(String label, String value, String unit, Color color) {
-    return Expanded(
-      child: Column(
-        children: [
-          Text(label,
-              style:
-                  const TextStyle(color: Pallete.subFontColor, fontSize: 11)),
-          const SizedBox(height: 4),
-          Text(value,
-              style: TextStyle(
-                  color: color, fontSize: 18, fontWeight: FontWeight.bold)),
-          Text(unit,
-              style:
-                  const TextStyle(color: Pallete.subFontColor, fontSize: 10)),
-        ],
-      ),
-    );
-  }
-
-  Widget _infoCard(
-      {required IconData icon, required String label, required String value}) {
-    return Container(
-      width: double.infinity,
-      padding: const EdgeInsets.all(14),
-      decoration: BoxDecoration(
-        color: Pallete.cardColor,
-        borderRadius: BorderRadius.circular(12),
-        border: Border.all(color: Pallete.borderColor),
-      ),
-      child: Row(
-        children: [
-          Container(
-            padding: const EdgeInsets.all(8),
-            decoration: BoxDecoration(
-              color: Pallete.primaryAccent.withValues(alpha: 0.1),
-              borderRadius: BorderRadius.circular(8),
-            ),
-            child: Icon(icon, color: Pallete.primaryAccent, size: 18),
-          ),
-          const SizedBox(width: 12),
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(label,
-                    style: const TextStyle(
-                        color: Pallete.subFontColor, fontSize: 11)),
-                Text(value,
-                    overflow: TextOverflow.ellipsis,
-                    style: const TextStyle(
-                        color: Pallete.mainFontColor,
-                        fontSize: 14,
-                        fontWeight: FontWeight.w500)),
-              ],
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-
-  Widget _buildLogoutButton() {
-    return GestureDetector(
-      onTap: () => context.read<AuthCubit>().logout(),
-      child: Container(
-        width: double.infinity,
-        padding: const EdgeInsets.symmetric(vertical: 14),
-        decoration: BoxDecoration(
-          color: Colors.transparent,
-          borderRadius: BorderRadius.circular(14),
-          border: Border.all(color: Pallete.dangerColor),
-        ),
-        child: const Row(
-          mainAxisAlignment: MainAxisAlignment.center,
-          children: [
-            Icon(Icons.logout, color: Pallete.dangerColor, size: 20),
-            SizedBox(width: 8),
-            Text('Logout',
-                style: TextStyle(
-                    color: Pallete.dangerColor,
-                    fontWeight: FontWeight.bold,
-                    fontSize: 16)),
-          ],
-        ),
-      ),
-    );
+  void didUpdateWidget(covariant _ProfileOverview oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (_loading && verifiedAccount(context)?.uid == widget.user.uid) _load();
   }
 
   @override
   void dispose() {
-    _nameController.dispose();
-    _ageController.dispose();
-    _heightController.dispose();
-    _weightController.dispose();
-    _targetCaloriesController.dispose();
-    _targetProteinController.dispose();
-    _targetCarbsController.dispose();
-    _targetFatController.dispose();
+    _request++;
+    WidgetsBinding.instance.removeObserver(this);
     super.dispose();
   }
+
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (state == AppLifecycleState.resumed) _load();
+  }
+
+  Future<void> _load() async {
+    final request = ++_request;
+    if (mounted) {
+      setState(() {
+        _loading = true;
+        _error = null;
+        _profile = null;
+        _count = null;
+        _streak = null;
+        _weight = null;
+      });
+    }
+    try {
+      final (profile, workouts, weights) = await (
+        widget.repository.getUserProfile(widget.user.uid),
+        widget.progress.getCompletedWorkouts(widget.user.uid),
+        widget.progress.getWeightEntries(widget.user.uid, limit: 0x7fffffff)
+      ).wait;
+      if (!_valid(request)) return;
+      setState(() {
+        _profile = profile;
+        _count = workouts.length;
+        _streak = ownedWorkoutStreak(workouts, DateTime.now());
+        final dated =
+            weights.where((entry) => !entry.date.isAfter(DateTime.now()));
+        _weight = dated.isEmpty ? null : dated.first.weight;
+        _loading = false;
+      });
+    } catch (_) {
+      if (_valid(request)) {
+        setState(() {
+          _loading = false;
+          _error =
+              'Your profile couldn’t be loaded. Retry to view or edit your saved details.';
+        });
+      }
+    }
+  }
+
+  Future<void> _open(Widget page) async {
+    await Navigator.of(context)
+        .push(MaterialPageRoute<void>(builder: (_) => page));
+    if (mounted && verifiedAccount(context)?.uid == widget.user.uid) _load();
+  }
+
+  Future<void> _edit() async {
+    if (_loading || _error != null) return;
+    await Navigator.of(context).push(MaterialPageRoute<bool>(
+        builder: (_) => ProfileEditor(
+            user: widget.user,
+            repository: widget.repository,
+            profile: _profile)));
+    if (mounted && verifiedAccount(context)?.uid == widget.user.uid) _load();
+  }
+
+  @override
+  Widget build(BuildContext context) =>
+      AppThemeScope(child: Builder(builder: (context) {
+        final theme = Theme.of(context);
+        final name = (_profile?.name?.trim().isNotEmpty ?? false)
+            ? _profile!.name!.trim()
+            : (widget.user.displayName?.trim().isNotEmpty ?? false)
+                ? widget.user.displayName!.trim()
+                : 'Your profile';
+        final initials = name == 'Your profile'
+            ? 'A'
+            : name
+                .split(RegExp(r'\s+'))
+                .take(2)
+                .map((s) => String.fromCharCode(s.runes.first))
+                .join()
+                .toUpperCase();
+        return Scaffold(
+            appBar: AppBar(title: const Text('Profile'), actions: [
+              IconButton(
+                  tooltip: 'App settings',
+                  onPressed: () => _open(const SettingsPage()),
+                  icon: const Icon(Icons.settings_outlined))
+            ]),
+            bottomNavigationBar: FeatureNavigation(index: 4, onReturn: _load),
+            body: SafeArea(
+                top: false,
+                bottom: false,
+                child: RefreshIndicator(
+                    onRefresh: _load,
+                    child: ListView(
+                        physics: const AlwaysScrollableScrollPhysics(),
+                        padding: const EdgeInsets.all(20),
+                        children: [
+                          Center(
+                              child: ConstrainedBox(
+                                  constraints: const BoxConstraints(
+                                      maxWidth: AppLayout.contentWidth),
+                                  child: Column(
+                                      crossAxisAlignment:
+                                          CrossAxisAlignment.stretch,
+                                      children: [
+                                        const SizedBox(height: 4),
+                                        Center(
+                                            child: Semantics(
+                                                label: 'Profile initials',
+                                                child: CircleAvatar(
+                                                    radius: 44,
+                                                    backgroundColor: theme
+                                                        .colorScheme
+                                                        .secondaryContainer,
+                                                    foregroundColor: theme
+                                                        .colorScheme.secondary,
+                                                    child: Text(initials,
+                                                        style: theme.textTheme
+                                                            .headlineMedium)))),
+                                        const SizedBox(height: 14),
+                                        Text(name,
+                                            textAlign: TextAlign.center,
+                                            style:
+                                                theme.textTheme.headlineSmall),
+                                        const SizedBox(height: 4),
+                                        Text(widget.user.email,
+                                            textAlign: TextAlign.center),
+                                        Center(
+                                            child: TextButton(
+                                                onPressed:
+                                                    _loading || _error != null
+                                                        ? null
+                                                        : _edit,
+                                                child: const Text(
+                                                    'Edit personal details'))),
+                                        if (_loading)
+                                          const Padding(
+                                              padding: EdgeInsets.symmetric(
+                                                  vertical: 16),
+                                              child: LinearProgressIndicator(
+                                                  semanticsLabel:
+                                                      'Loading profile')),
+                                        if (_error != null)
+                                          ProfileFeedback(_error!,
+                                              retry: _load),
+                                        LayoutBuilder(builder: (context, box) {
+                                          final cards = [
+                                            _stat(
+                                                context,
+                                                Icons.fitness_center,
+                                                _count?.toString() ?? '—',
+                                                'Workouts',
+                                                'Recorded completions'),
+                                            _stat(
+                                                context,
+                                                Icons.monitor_weight_outlined,
+                                                _weight?.toStringAsFixed(1) ??
+                                                    '—',
+                                                'Weight (kg)',
+                                                'Latest check-in · kg'),
+                                            _stat(
+                                                context,
+                                                Icons.calendar_today_outlined,
+                                                _streak?.toString() ?? '—',
+                                                'Day streak',
+                                                'Recorded workout dates')
+                                          ];
+                                          final width = box.maxWidth;
+                                          return Wrap(
+                                              spacing: 8,
+                                              runSpacing: 8,
+                                              children: [
+                                                for (final card in cards)
+                                                  SizedBox(
+                                                      width: width < 330 ||
+                                                              MediaQuery.textScalerOf(
+                                                                          context)
+                                                                      .scale(
+                                                                          16) >
+                                                                  24
+                                                          ? width
+                                                          : (width - 16) / 3,
+                                                      child: card)
+                                              ]);
+                                        }),
+                                        const SizedBox(height: 16),
+                                        ProfileGroup(children: [
+                                          ProfileRow(
+                                              icon: Icons.flag_outlined,
+                                              title: _profile?.goal == null
+                                                  ? 'Your fitness goal'
+                                                  : 'My goal',
+                                              subtitle: _profile?.goal ??
+                                                  'Add a goal in personal details',
+                                              onTap: _loading || _error != null
+                                                  ? null
+                                                  : _edit)
+                                        ]),
+                                        const SizedBox(height: 16),
+                                        ProfileGroup(children: [
+                                          ProfileRow(
+                                              icon: Icons.person_outline,
+                                              title: 'Account & Security',
+                                              onTap: () => _open(
+                                                  const AccountSecurityPage())),
+                                          ProfileRow(
+                                              icon: Icons.tune,
+                                              title: 'App Settings',
+                                              onTap: () =>
+                                                  _open(const SettingsPage())),
+                                          ProfileRow(
+                                              icon: Icons.privacy_tip_outlined,
+                                              title: 'Data & Privacy',
+                                              onTap: () => _open(
+                                                  DataPrivacyPage(
+                                                      repository:
+                                                          widget.repository))),
+                                          ProfileRow(
+                                              icon: Icons.info_outline,
+                                              title: 'About Allen',
+                                              onTap: () =>
+                                                  _open(const AboutPage())),
+                                        ]),
+                                        if (_profile != null) ...[
+                                          const ProfileSection(
+                                              'Personal details'),
+                                          ProfileGroup(children: [
+                                            if (_profile!.age != null)
+                                              ProfileRow(
+                                                  icon: Icons.person_outline,
+                                                  title: 'Age',
+                                                  value:
+                                                      '${_profile!.age} years'),
+                                            if (_profile!.height != null)
+                                              ProfileRow(
+                                                  icon: Icons.height,
+                                                  title: 'Height',
+                                                  value:
+                                                      '${_profile!.height} cm'),
+                                            if (_profile!.weight != null)
+                                              ProfileRow(
+                                                  icon: Icons
+                                                      .monitor_weight_outlined,
+                                                  title: 'Profile weight',
+                                                  value:
+                                                      '${_profile!.weight} kg'),
+                                            if (_profile!.gender != null)
+                                              ProfileRow(
+                                                  icon: Icons.person_outline,
+                                                  title: 'Gender',
+                                                  value: _profile!.gender),
+                                            if (_profile!.bmi != null)
+                                              ProfileRow(
+                                                  icon: Icons.straighten,
+                                                  title: 'BMI',
+                                                  subtitle:
+                                                      'Based on profile height and weight; a general screening measure, not a diagnosis.',
+                                                  value:
+                                                      '${_profile!.bmi!.toStringAsFixed(1)} · ${_profile!.bmiCategory}'),
+                                            ProfileRow(
+                                                icon: Icons.edit_outlined,
+                                                title:
+                                                    'Edit details & nutrition targets',
+                                                onTap: _edit),
+                                          ])
+                                        ],
+                                        if (_profile != null &&
+                                            [
+                                              _profile!.targetCalories,
+                                              _profile!.targetProtein,
+                                              _profile!.targetCarbs,
+                                              _profile!.targetFat
+                                            ].any((v) => v != null)) ...[
+                                          const ProfileSection(
+                                              'Daily nutrition targets'),
+                                          ProfileGroup(children: [
+                                            if (_profile!.targetCalories !=
+                                                null)
+                                              ProfileRow(
+                                                  icon:
+                                                      Icons.restaurant_outlined,
+                                                  title: 'Calories',
+                                                  value:
+                                                      '${_profile!.targetCalories} kcal'),
+                                            if (_profile!.targetProtein != null)
+                                              ProfileRow(
+                                                  icon:
+                                                      Icons.restaurant_outlined,
+                                                  title: 'Protein',
+                                                  value:
+                                                      '${_profile!.targetProtein} g'),
+                                            if (_profile!.targetCarbs != null)
+                                              ProfileRow(
+                                                  icon:
+                                                      Icons.restaurant_outlined,
+                                                  title: 'Carbs',
+                                                  value:
+                                                      '${_profile!.targetCarbs} g'),
+                                            if (_profile!.targetFat != null)
+                                              ProfileRow(
+                                                  icon:
+                                                      Icons.restaurant_outlined,
+                                                  title: 'Fat',
+                                                  value:
+                                                      '${_profile!.targetFat} g'),
+                                          ]),
+                                        ],
+                                        const SizedBox(height: 16),
+                                      ])))
+                        ]))));
+      }));
+  Widget _stat(BuildContext context, IconData icon, String value, String label,
+          String hint) =>
+      Semantics(
+          label: '$label: $value. $hint',
+          excludeSemantics: true,
+          child: Container(
+              padding: const EdgeInsets.symmetric(vertical: 16, horizontal: 8),
+              decoration: BoxDecoration(
+                  color: Theme.of(context).colorScheme.surface,
+                  borderRadius: BorderRadius.circular(12)),
+              child: Column(children: [
+                Icon(icon,
+                    color: Theme.of(context).colorScheme.secondary, size: 23),
+                const SizedBox(height: 8),
+                Text(value, style: Theme.of(context).textTheme.titleLarge),
+                Text(label, style: Theme.of(context).textTheme.bodySmall),
+              ])));
 }

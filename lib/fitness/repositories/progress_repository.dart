@@ -245,7 +245,7 @@ class ProgressRepository {
       read(
           ProgressSource.goals,
           () async => NutritionGoals.fromStoredProfile(
-              await _local.getUserProfile(), userId)),
+              await _local.getUserProfile(userId: userId), userId)),
     ]);
     return ProgressSnapshot(
         weights: values[0] as List<WeightEntry>?,

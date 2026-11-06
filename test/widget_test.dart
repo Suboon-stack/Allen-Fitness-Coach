@@ -94,9 +94,38 @@ void main() {
         jsonEncode({'weight': 180, 'date': now})
       ],
       'workouts': jsonEncode([
-        {'id': 'first', 'completed': true, 'date': now},
-        {'id': 'second', 'completed': true, 'date': now},
+        {
+          'id': 'first',
+          'userId': 'member',
+          'name': 'Session A',
+          'durationMinutes': 30,
+          'completed': true,
+          'date': now
+        },
+        {
+          'id': 'second',
+          'userId': 'member',
+          'name': 'Session B',
+          'durationMinutes': 30,
+          'completed': true,
+          'date': now
+        },
         {'id': 'third', 'completed': false, 'date': now},
+        {
+          'id': 'foreign',
+          'userId': 'other',
+          'name': 'Private',
+          'durationMinutes': 30,
+          'completed': true,
+          'date': now
+        },
+        {
+          'id': 'unowned',
+          'name': 'Unowned',
+          'durationMinutes': 30,
+          'completed': true,
+          'date': now
+        },
       ]),
       'weights': jsonEncode([
         {
@@ -189,7 +218,7 @@ void main() {
     await pumpHome(tester);
     await tester.pumpAndSettle();
     for (final entry in {
-      'Workouts': WorkoutPage,
+      'Workout': WorkoutPage,
       'Nutrition': MealPlannerPage,
       'Progress': ProgressPage
     }.entries) {
@@ -222,7 +251,7 @@ void main() {
       await tester.pumpAndSettle();
       expect(find.text('Ask Allen'), findsOneWidget);
     }
-    await tester.tap(find.text('Workouts'));
+    await tester.tap(find.text('Workout'));
     await tester.pumpAndSettle();
     final loggedAt = DateTime.now();
     await ProgressRepository(authenticatedUser: () => 'member').addWeightEntry(

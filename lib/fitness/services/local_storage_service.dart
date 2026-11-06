@@ -15,6 +15,7 @@ class LocalStorageService {
   bool _mealsNeedReload = false;
   bool _waterNeedsReload = false;
   bool _weightsNeedReload = false;
+  bool _profilesNeedReload = false;
   Future<void>? _waterWriteTail;
   factory LocalStorageService() => _instance;
   LocalStorageService._internal();
@@ -27,10 +28,50 @@ class LocalStorageService {
     await prefs.setString('user_profile', jsonEncode(profile));
   }
 
-  Future<Map<String, dynamic>?> getUserProfile() async {
+  Future<Map<String, dynamic>?> getUserProfile({String? userId}) async {
     final prefs = await _prefs;
-    final data = prefs.getString('user_profile');
-    return data != null ? jsonDecode(data) : null;
+    if (_profilesNeedReload) {
+      await prefs.reload();
+      _profilesNeedReload = false;
+    }
+    if (userId != null) {
+      if (userId.isEmpty) return null;
+      final owned =
+          prefs.getString('user_profile_${Uri.encodeComponent(userId)}');
+      if (owned != null) {
+        final data = Map<String, dynamic>.from(jsonDecode(owned) as Map);
+        if (data['id'] != userId) {
+          throw const FormatException('Invalid profile ownership');
+        }
+        return data;
+      }
+    }
+    final raw = prefs.getString('user_profile');
+    if (raw == null) return null;
+    final data = Map<String, dynamic>.from(jsonDecode(raw) as Map);
+    return userId == null || data['id'] == userId ? data : null;
+  }
+
+  // New writes never replace, claim or delete the shared legacy profile.
+  Future<void> saveOwnedUserProfile(
+      String userId, Map<String, dynamic> profile) async {
+    if (userId.isEmpty || profile['id'] != userId) {
+      throw ArgumentError('Profile owner mismatch');
+    }
+    final prefs = await _prefs;
+    try {
+      if (!await prefs.setString(
+          'user_profile_${Uri.encodeComponent(userId)}', jsonEncode(profile))) {
+        throw StateError('Profile persistence was not confirmed');
+      }
+    } catch (_) {
+      _profilesNeedReload = true;
+      try {
+        await prefs.reload();
+        _profilesNeedReload = false;
+      } catch (_) {/* Verify cache before the next read. */}
+      rethrow;
+    }
   }
 
   // Workouts
