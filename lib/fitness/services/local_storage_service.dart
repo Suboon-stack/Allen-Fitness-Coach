@@ -14,6 +14,7 @@ class LocalStorageService {
   bool _workoutsNeedReload = false;
   bool _mealsNeedReload = false;
   bool _waterNeedsReload = false;
+  bool _weightsNeedReload = false;
   Future<void>? _waterWriteTail;
   factory LocalStorageService() => _instance;
   LocalStorageService._internal();
@@ -98,11 +99,26 @@ class LocalStorageService {
   // Weights
   Future<void> saveWeights(List<Map<String, dynamic>> weights) async {
     final prefs = await _prefs;
-    await prefs.setString('weights', jsonEncode(weights));
+    try {
+      if (!await prefs.setString('weights', jsonEncode(weights))) {
+        throw StateError('Weight persistence was not confirmed');
+      }
+    } catch (_) {
+      _weightsNeedReload = true;
+      try {
+        await prefs.reload();
+        _weightsNeedReload = false;
+      } catch (_) {/* Retry read must verify native state. */}
+      rethrow;
+    }
   }
 
   Future<List<Map<String, dynamic>>> getWeights() async {
     final prefs = await _prefs;
+    if (_weightsNeedReload) {
+      await prefs.reload();
+      _weightsNeedReload = false;
+    }
     final data = prefs.getString('weights');
     return data != null
         ? List<Map<String, dynamic>>.from(jsonDecode(data))

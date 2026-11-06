@@ -1,7 +1,9 @@
 # Allen UI/UX documentation
 
-Allen is being redesigned in reviewed stages. The compact Home layout and Nutrition feature are owner-approved. **Midnight Navy + Electric Blue** is the selected final identity; its implementation covers welcome/authentication, Home, Workout Plan, Saved Workouts, all three Nutrition tabs, AI Coach Chat, and Food Scanner. The owner has approved the latest UI after Android phone review, including the refined Welcome screen. Other feature screens retain their earlier styling until their own milestones.
+Allen is being redesigned in reviewed stages. The compact Home layout and Nutrition feature are owner-approved. **Midnight Navy + Electric Blue** is the selected final identity; its implementation covers welcome/authentication, Home, Workout Plan, Saved Workouts, all three Nutrition tabs, AI Coach Chat, and Food Scanner. Progress Tracking now reuses the same theme in its approved implementation. The owner has approved the latest UI after Android phone review, including the refined Welcome screen. Other feature screens retain their earlier styling until their own milestones.
 
+- [Progress Tracking — approved for milestone finalization](progress-tracking-redesign.md)
+- [Progress audit and approved weight metadata repair](progress-tracking-audit.md)
 - [Food Scanner — Android-tested and owner-approved](food-scanner-redesign.md)
 - [Food Scanner repair root causes](food-scanner-repairs.md)
 - [Approved AI Coach milestone and validation](approved-ai-coach-milestone.md)
@@ -25,4 +27,4 @@ Allen is being redesigned in reviewed stages. The compact Home layout and Nutrit
 - [Before/after screenshot checklist](screenshot-checklist.md)
 - [Implementation, validation, and deferred issues](implementation-notes.md)
 
-Workout Planner UI is approved; full live-service, restart, and accessibility verification remains separate. Nutrition Planner and circular Nutrition/Water UI are owner-approved; AI Coach Chat UI/UX and Food Scanner implementation/UI/UX are owner-approved on Android; Progress, Profile and Settings remain pending redesign. Documentation distinguishes implemented UI, automated regression coverage, owner device review, and remaining functionality verification.
+Workout Planner UI is approved; full live-service, restart, and accessibility verification remains separate. Nutrition Planner and circular Nutrition/Water UI are owner-approved; AI Coach Chat UI/UX and Food Scanner implementation/UI/UX are owner-approved on Android; Progress Tracking is implemented and approved for milestone finalization; its device-regression limits remain documented; Profile and Settings remain pending redesign. Documentation distinguishes implemented UI, automated regression coverage, owner device review, and remaining functionality verification.

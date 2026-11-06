@@ -8,6 +8,8 @@ import 'package:allen/fitness/pages/workout_page.dart';
 import 'package:allen/fitness/pages/meal_planner_page.dart';
 import 'package:allen/fitness/pages/progress_page.dart';
 import 'package:allen/fitness/repositories/workout_repository.dart';
+import 'package:allen/fitness/repositories/progress_repository.dart';
+import 'package:allen/fitness/models/progress_model.dart';
 import 'package:allen/fitness/services/ai_service.dart';
 import 'package:allen/fitness/services/local_storage_service.dart';
 import 'package:allen/fitness/theme/app_theme.dart';
@@ -97,7 +99,13 @@ void main() {
         {'id': 'third', 'completed': false, 'date': now},
       ]),
       'weights': jsonEncode([
-        {'weight': 72.4, 'date': now}
+        {
+          'id': 'owned-weight',
+          'userId': 'member',
+          'weight': 72.4,
+          'date': now,
+          'createdAt': now
+        }
       ]),
     });
     await LocalStorageService().addWater(750);
@@ -199,10 +207,14 @@ void main() {
       final routeTheme = Theme.of(tester.element(scaffold));
       expect(
           routeTheme.colorScheme.surface,
-          entry.value == WorkoutPage || entry.value == MealPlannerPage
+          entry.value == WorkoutPage ||
+                  entry.value == MealPlannerPage ||
+                  entry.value == ProgressPage
               ? AppColors.surface
               : destinationTheme.colorScheme.surface);
-      if (entry.value != WorkoutPage && entry.value != MealPlannerPage) {
+      if (entry.value != WorkoutPage &&
+          entry.value != MealPlannerPage &&
+          entry.value != ProgressPage) {
         expect(routeTheme.colorScheme.surface,
             AppTheme.legacyTheme.colorScheme.surface);
       }
@@ -212,7 +224,14 @@ void main() {
     }
     await tester.tap(find.text('Workouts'));
     await tester.pumpAndSettle();
-    await LocalStorageService().addWeight(71.2);
+    final loggedAt = DateTime.now();
+    await ProgressRepository(authenticatedUser: () => 'member').addWeightEntry(
+        WeightEntry(
+            id: 'return-refresh-weight',
+            userId: 'member',
+            weight: 71.2,
+            date: loggedAt,
+            createdAt: loggedAt));
     await tester.tap(find.byTooltip('Back'));
     await tester.pumpAndSettle();
     expect(find.text('71.2 kg'), findsOneWidget);

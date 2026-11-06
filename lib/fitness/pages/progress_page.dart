@@ -1,581 +1,441 @@
+import 'dart:async';
 import 'package:allen/features/auth/presentation/cubits/auth_cubit.dart';
-import 'package:allen/fitness/models/progress_model.dart';
-import 'package:allen/fitness/repositories/progress_repository.dart';
-import 'package:allen/fitness/repositories/workout_repository.dart';
-import 'package:allen/fitness/repositories/meal_repository.dart';
-import 'package:allen/pallete.dart';
+import 'package:allen/features/auth/presentation/cubits/auth_state.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
-import 'package:fl_chart/fl_chart.dart';
 import 'package:intl/intl.dart';
+import '../models/progress_model.dart';
+import '../models/progress_tracking_data.dart';
+import '../repositories/progress_repository.dart';
+import '../theme/app_theme.dart';
+import '../widgets/progress_chart.dart';
+import '../widgets/progress_journey.dart';
+import '../widgets/progress_metrics.dart';
+import '../widgets/progress_timeline.dart';
+import '../widgets/weight_entry_sheet.dart';
+import 'meal_planner_page.dart';
+import 'workout_page.dart';
 
 class ProgressPage extends StatefulWidget {
-  const ProgressPage({super.key});
-
+  const ProgressPage({super.key, this.repository, this.now});
+  final ProgressRepository? repository;
+  final DateTime Function()? now;
   @override
   State<ProgressPage> createState() => _ProgressPageState();
 }
 
 class _ProgressPageState extends State<ProgressPage>
-    with SingleTickerProviderStateMixin {
-  final ProgressRepository _progressRepo = ProgressRepository();
-  final WorkoutRepository _workoutRepo = WorkoutRepository();
-  final MealRepository _mealRepo = MealRepository();
-
-  late TabController _tabController;
-  final TextEditingController _weightController = TextEditingController();
-
-  List<WeightEntry> _weightEntries = [];
-  Map<String, dynamic>? _stats;
-  int _workoutCount = 0;
-  int _streak = 0;
-  bool _loading = true;
-  String _selectedPeriod = '30';
+    with WidgetsBindingObserver {
+  late final _repository = widget.repository ?? ProgressRepository();
+  ProgressSnapshot? _snapshot;
+  ProgressPeriod _period = ProgressPeriod.month;
+  bool _loading = true, _editing = false, _closed = false;
+  int _request = 0;
+  String? _user, _error;
+  Timer? _midnight;
+  DateTime _now() => widget.now?.call() ?? DateTime.now();
+  String? _verifiedUser() {
+    final auth = context.read<AuthCubit>();
+    if (auth.state is AuthLoading ||
+        auth.state is AuthError &&
+            (auth.state as AuthError).sessionUnresolved) {
+      return null;
+    }
+    return auth.currentUser?.uid;
+  }
 
   @override
   void initState() {
     super.initState();
-    _tabController = TabController(length: 3, vsync: this);
-    _loadData();
+    WidgetsBinding.instance.addObserver(this);
+    _user = _verifiedUser();
+    unawaited(_load());
+    _scheduleDay();
   }
 
   @override
   void dispose() {
-    _tabController.dispose();
-    _weightController.dispose();
+    _closed = true;
+    _request++;
+    _midnight?.cancel();
+    WidgetsBinding.instance.removeObserver(this);
     super.dispose();
   }
 
-  Future<void> _loadData() async {
-    final user = context.read<AuthCubit>().currentUser;
-    if (user == null) return;
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (state == AppLifecycleState.resumed) {
+      unawaited(_load());
+      _scheduleDay();
+    }
+  }
 
-    final weights = await _progressRepo.getWeightEntries(user.uid);
-    final stats = await _progressRepo.getProgressStats(user.uid);
-    final count = await _workoutRepo.getWorkoutCount(user.uid);
-    final streak = await _workoutRepo.getCurrentStreak(user.uid);
-
-    if (!mounted) return;
-    setState(() {
-      _weightEntries = weights;
-      _stats = stats;
-      _workoutCount = count;
-      _streak = streak;
-      _loading = false;
+  void _scheduleDay() {
+    _midnight?.cancel();
+    final now = _now();
+    _midnight =
+        Timer(DateTime(now.year, now.month, now.day + 1).difference(now), () {
+      if (mounted && !_closed) {
+        unawaited(_load());
+        _scheduleDay();
+      }
     });
   }
 
-  Future<void> _logWeight() async {
-    final user = context.read<AuthCubit>().currentUser;
-    if (user == null) return;
+  void _accountChanged() {
+    final user = _verifiedUser();
+    if (user == _user) return;
+    _user = user;
+    _request++;
+    _snapshot = null;
+    _error = null;
+    unawaited(_load());
+  }
 
-    final text = _weightController.text.trim();
-    final weight = double.tryParse(text);
-
-    if (weight == null || weight <= 0) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-            content: Text('Please enter a valid weight'),
-            backgroundColor: Pallete.dangerColor),
-      );
+  Future<void> _load() async {
+    if (_closed) return;
+    final owner = _verifiedUser(), request = ++_request;
+    setState(() {
+      _loading = true;
+      _error = null;
+    });
+    if (owner == null) {
+      setState(() {
+        _snapshot = null;
+        _loading = false;
+        _error = 'Sign in to view your personal progress.';
+      });
       return;
     }
-
-    await _progressRepo.addWeightEntry(WeightEntry(
-        id: '',
-        userId: user.uid,
-        weight: weight,
-        date: DateTime.now(),
-        createdAt: DateTime.now()));
-    _weightController.clear();
-    Navigator.pop(context);
-    await _loadData();
-
-    if (mounted) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-            content: Text('Weight logged!'),
-            backgroundColor: Pallete.successColor),
-      );
+    try {
+      final data = await _repository.loadTracking(owner);
+      if (!mounted ||
+          _closed ||
+          request != _request ||
+          _verifiedUser() != owner) {
+        return;
+      }
+      setState(() {
+        _snapshot = data;
+        _loading = false;
+      });
+    } catch (_) {
+      if (mounted &&
+          !_closed &&
+          request == _request &&
+          _verifiedUser() == owner) {
+        setState(() {
+          _snapshot = null;
+          _loading = false;
+          _error =
+              'Progress couldn’t be loaded. Your saved records have not been changed.';
+        });
+      }
     }
   }
 
-  void _showLogDialog() {
-    showDialog(
-      context: context,
-      builder: (ctx) => AlertDialog(
-        backgroundColor: Pallete.cardColor,
-        shape: RoundedRectangleBorder(
-            borderRadius: BorderRadius.circular(16),
-            side: const BorderSide(color: Pallete.borderColor)),
-        title: const Text('Log Weight',
-            style: TextStyle(color: Pallete.mainFontColor)),
-        content: TextField(
-          controller: _weightController,
-          keyboardType: const TextInputType.numberWithOptions(decimal: true),
-          style: const TextStyle(color: Pallete.mainFontColor),
-          decoration: InputDecoration(
-            hintText: 'Enter weight in kg',
-            hintStyle: const TextStyle(color: Pallete.hintColor),
-            filled: true,
-            fillColor: Pallete.surfaceColor,
-            border: OutlineInputBorder(
-                borderRadius: BorderRadius.circular(10),
-                borderSide: BorderSide.none),
-            suffixText: 'kg',
-            suffixStyle: const TextStyle(color: Pallete.subFontColor),
-          ),
-        ),
-        actions: [
-          TextButton(
-              onPressed: () => Navigator.pop(ctx),
-              child: const Text('Cancel',
-                  style: TextStyle(color: Pallete.subFontColor))),
-          TextButton(
-              onPressed: _logWeight,
-              child: const Text('Save',
-                  style: TextStyle(color: Pallete.primaryAccent))),
-        ],
-      ),
-    );
+  void _dismissAfterAccountChange(BuildContext routeContext, String owner) {
+    if (_verifiedUser() == owner) return;
+    final route = ModalRoute.of(routeContext);
+    if (route == null || !route.isActive) return;
+    final navigator = Navigator.of(routeContext);
+    navigator.popUntil((candidate) => candidate == route || candidate.isFirst);
+    if (route.isActive) navigator.pop();
+  }
+
+  Future<void> _weight(BuildContext context, {WeightEntry? entry}) async {
+    if (_editing || _closed) return;
+    final owner = _verifiedUser();
+    if (owner == null ||
+        entry != null && (entry.userId != owner || entry.id.isEmpty)) {
+      return;
+    }
+    setState(() => _editing = true);
+    final saved = await showModalBottomSheet<bool>(
+        context: context,
+        isScrollControlled: true,
+        useSafeArea: true,
+        isDismissible: false,
+        enableDrag: false,
+        builder: (sheetContext) => BlocListener<AuthCubit, AuthState>(
+            listener: (_, __) {
+              _dismissAfterAccountChange(sheetContext, owner);
+            },
+            child: WeightEntrySheet(
+                repository: _repository,
+                userId: owner,
+                currentUser: _verifiedUser,
+                entry: entry)));
+    if (!mounted || _closed) return;
+    setState(() => _editing = false);
+    if (saved == true && _verifiedUser() == owner) {
+      await _load();
+      if (mounted && context.mounted && !_closed && _verifiedUser() == owner) {
+        ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(content: Text('Weight history updated.')));
+      }
+    }
+  }
+
+  Future<void> _open(Widget page) async {
+    await Navigator.of(context)
+        .push(MaterialPageRoute<void>(builder: (_) => page));
+    if (mounted && !_closed) await _load();
+  }
+
+  Future<void> _details(BuildContext context) async {
+    final owner = _verifiedUser();
+    if (owner == null || _snapshot == null) return;
+    final data =
+        ProgressViewData(snapshot: _snapshot!, period: _period, now: _now());
+    final entries = data.weights.reversed.toList();
+    final selected = await showModalBottomSheet<WeightEntry>(
+        context: context,
+        isScrollControlled: true,
+        useSafeArea: true,
+        builder: (sheetContext) => BlocListener<AuthCubit, AuthState>(
+            listener: (_, __) {
+              _dismissAfterAccountChange(sheetContext, owner);
+            },
+            child: SafeArea(
+                top: false,
+                child: FractionallySizedBox(
+                    heightFactor: .75,
+                    child: Column(children: [
+                      Padding(
+                          padding: const EdgeInsets.all(20),
+                          child: Text('Measurements · ${_period.label}',
+                              style: Theme.of(context).textTheme.titleLarge)),
+                      Expanded(
+                          child: entries.isEmpty
+                              ? const Center(
+                                  child:
+                                      Text('No measurements in this period.'))
+                              : ListView.builder(
+                                  itemCount: entries.length,
+                                  itemBuilder: (context, index) {
+                                    final entry = entries[index];
+                                    return ListTile(
+                                        title: Text(
+                                            '${entry.weight.toStringAsFixed(1)} kg'),
+                                        subtitle: Text(
+                                            DateFormat('d MMM y, HH:mm')
+                                                .format(entry.date)),
+                                        trailing: entry.id.isNotEmpty
+                                            ? const Icon(Icons.edit_outlined)
+                                            : null,
+                                        onTap: entry.id.isEmpty
+                                            ? null
+                                            : () => Navigator.pop(
+                                                sheetContext, entry));
+                                  })),
+                    ])))));
+    if (mounted &&
+        context.mounted &&
+        !_closed &&
+        _verifiedUser() == owner &&
+        selected != null) {
+      await _weight(context, entry: selected);
+    }
   }
 
   @override
-  Widget build(BuildContext context) {
-    return Scaffold(
-      backgroundColor: Pallete.backgroundColor,
-      appBar: AppBar(
-        backgroundColor: Pallete.surfaceColor,
-        title: const Text('Progress'),
-        actions: [
-          IconButton(
-              icon: const Icon(Icons.add_rounded, color: Pallete.primaryAccent),
-              onPressed: _showLogDialog),
-        ],
-        bottom: TabBar(
-          controller: _tabController,
-          indicatorColor: Pallete.primaryAccent,
-          labelColor: Pallete.primaryAccent,
-          unselectedLabelColor: Pallete.subFontColor,
-          tabs: const [
-            Tab(text: 'Overview'),
-            Tab(text: 'Weight'),
-            Tab(text: 'Stats')
-          ],
-        ),
-      ),
-      body: _loading
-          ? const Center(
-              child: CircularProgressIndicator(color: Pallete.primaryAccent))
-          : TabBarView(
-              controller: _tabController,
-              children: [
-                _buildOverviewTab(),
-                _buildWeightTab(),
-                _buildStatsTab()
-              ],
-            ),
-    );
-  }
-
-  Widget _buildOverviewTab() {
-    return SingleChildScrollView(
-      padding: const EdgeInsets.all(20),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          _statCards(),
-          const SizedBox(height: 24),
-          _weightChart(),
-          const SizedBox(height: 24),
-          _workoutStats(),
-        ],
-      ),
-    );
-  }
-
-  Widget _statCards() {
-    final currentWeight = (_stats?['currentWeight'] as num?)?.toDouble();
-    final change = (_stats?['weightChange'] as num?)?.toDouble();
-
-    return Row(
-      children: [
-        _statCard(
-          currentWeight != null
-              ? '${currentWeight.toStringAsFixed(1)}kg'
-              : '--',
-          'Current',
-          Icons.monitor_weight_outlined,
-        ),
-        const SizedBox(width: 10),
-        _statCard(
-          change != null
-              ? '${change >= 0 ? '+' : ''}${change.toStringAsFixed(1)}kg'
-              : '--',
-          'Change',
-          Icons.trending_up_rounded,
-        ),
-        const SizedBox(width: 10),
-        _statCard('$_streak', 'Streak', Icons.local_fire_department_rounded),
-      ],
-    );
-  }
-
-  Widget _statCard(String value, String label, IconData icon) {
-    return Expanded(
-      child: Container(
-        padding: const EdgeInsets.symmetric(vertical: 14, horizontal: 10),
-        decoration: BoxDecoration(
-            color: Pallete.cardColor,
-            borderRadius: BorderRadius.circular(12),
-            border: Border.all(color: Pallete.borderColor)),
-        child: Column(
-          children: [
-            Icon(icon, color: Pallete.primaryAccent, size: 20),
-            const SizedBox(height: 6),
-            Text(value,
-                style: const TextStyle(
-                    color: Pallete.mainFontColor,
-                    fontSize: 15,
-                    fontWeight: FontWeight.bold)),
-            Text(label,
-                style:
-                    const TextStyle(color: Pallete.subFontColor, fontSize: 10)),
-          ],
-        ),
-      ),
-    );
-  }
-
-  Widget _weightChart() {
-    if (_weightEntries.isEmpty) {
-      return Container(
-        height: 200,
-        padding: const EdgeInsets.all(20),
-        decoration: BoxDecoration(
-            color: Pallete.cardColor,
-            borderRadius: BorderRadius.circular(16),
-            border: Border.all(color: Pallete.borderColor)),
-        child: const Center(
-            child: Text('Log some weights to see the chart',
-                style: TextStyle(color: Pallete.subFontColor))),
-      );
-    }
-
-    final sortedEntries = _weightEntries
-      ..sort((a, b) => a.date.compareTo(b.date));
-    final spots = <FlSpot>[];
-
-    for (int i = 0; i < sortedEntries.length; i++) {
-      spots.add(FlSpot(i.toDouble(), sortedEntries[i].weight));
-    }
-
-    final minWeight =
-        sortedEntries.map((e) => e.weight).reduce((a, b) => a < b ? a : b);
-    final maxWeight =
-        sortedEntries.map((e) => e.weight).reduce((a, b) => a > b ? a : b);
-
-    return Container(
-      height: 250,
-      padding: const EdgeInsets.all(16),
-      decoration: BoxDecoration(
-          color: Pallete.cardColor,
-          borderRadius: BorderRadius.circular(16),
-          border: Border.all(color: Pallete.borderColor)),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          const Text('Weight Progress',
-              style: TextStyle(
-                  color: Pallete.mainFontColor, fontWeight: FontWeight.bold)),
-          const SizedBox(height: 16),
-          Expanded(
-            child: LineChart(
-              LineChartData(
-                gridData: FlGridData(show: false),
-                titlesData: const FlTitlesData(show: false),
-                borderData: FlBorderData(show: false),
-                minY: minWeight - 2,
-                maxY: maxWeight + 2,
-                lineBarsData: [
-                  LineChartBarData(
-                    spots: spots,
-                    isCurved: true,
-                    color: Pallete.primaryAccent,
-                    barWidth: 3,
-                    isStrokeCapRound: true,
-                    dotData: FlDotData(show: spots.length < 15),
-                    belowBarData: BarAreaData(
-                        show: true,
-                        color: Pallete.primaryAccent.withValues(alpha: 0.1)),
-                  ),
-                ],
-              ),
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-
-  Widget _workoutStats() {
-    final weekly = (_stats?['weeklyWorkouts'] as num?)?.toInt() ?? 0;
-    final monthly = (_stats?['monthlyWorkouts'] as num?)?.toInt() ?? 0;
-    final total = (_stats?['totalWorkouts'] as num?)?.toInt() ?? 0;
-    final weeklyCals = (_stats?['weeklyCalories'] as num?)?.toInt() ?? 0;
-
-    return Container(
-      padding: const EdgeInsets.all(16),
-      decoration: BoxDecoration(
-          color: Pallete.cardColor,
-          borderRadius: BorderRadius.circular(16),
-          border: Border.all(color: Pallete.borderColor)),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          const Text('Workout Stats',
-              style: TextStyle(
-                  color: Pallete.mainFontColor, fontWeight: FontWeight.bold)),
-          const SizedBox(height: 16),
-          Row(
-            children: [
-              _miniStat('$total', 'Total', Colors.orange),
-              _miniStat('$weekly', 'This Week', Colors.blue),
-              _miniStat('$monthly', 'This Month', Colors.green),
-            ],
-          ),
-          const SizedBox(height: 16),
-          Text('Weekly Calories Burned: ~${weeklyCals * 5}',
-              style:
-                  const TextStyle(color: Pallete.subFontColor, fontSize: 12)),
-        ],
-      ),
-    );
-  }
-
-  Widget _miniStat(String value, String label, Color color) {
-    return Expanded(
-      child: Column(
-        children: [
-          Text(value,
-              style: TextStyle(
-                  color: color, fontSize: 24, fontWeight: FontWeight.bold)),
-          Text(label,
-              style:
-                  const TextStyle(color: Pallete.subFontColor, fontSize: 11)),
-        ],
-      ),
-    );
-  }
-
-  Widget _buildWeightTab() {
-    return Column(
-      children: [
-        Padding(
-          padding: const EdgeInsets.all(16),
-          child: Row(
-            children: [
-              const Text('Period:',
-                  style: TextStyle(color: Pallete.subFontColor)),
-              const SizedBox(width: 8),
-              ...['7', '30', '90'].map((p) => Padding(
-                    padding: const EdgeInsets.only(right: 8),
-                    child: ChoiceChip(
-                        label: Text('$p days'),
-                        selected: _selectedPeriod == p,
-                        onSelected: (s) => setState(() => _selectedPeriod = p)),
-                  )),
-            ],
-          ),
-        ),
-        Expanded(
-          child: _weightEntries.isEmpty
-              ? const Center(
-                  child: Text('No weight entries yet',
-                      style: TextStyle(color: Pallete.subFontColor)))
-              : ListView.builder(
-                  padding: const EdgeInsets.symmetric(horizontal: 16),
-                  itemCount: _weightEntries.length,
-                  itemBuilder: (context, index) {
-                    final entry = _weightEntries[index];
-                    final dateFormat = DateFormat('MMM dd, yyyy');
-                    return Container(
-                      margin: const EdgeInsets.only(bottom: 8),
-                      padding: const EdgeInsets.all(14),
-                      decoration: BoxDecoration(
-                          color: Pallete.cardColor,
-                          borderRadius: BorderRadius.circular(12),
-                          border: Border.all(color: Pallete.borderColor)),
-                      child: Row(
-                        children: [
-                          Expanded(
-                            child: Column(
-                              crossAxisAlignment: CrossAxisAlignment.start,
-                              children: [
-                                Text(dateFormat.format(entry.date),
-                                    style: const TextStyle(
-                                        color: Pallete.subFontColor,
-                                        fontSize: 12)),
-                                Text('${entry.weight.toStringAsFixed(1)} kg',
-                                    style: const TextStyle(
-                                        color: Pallete.mainFontColor,
-                                        fontWeight: FontWeight.bold,
-                                        fontSize: 16)),
-                              ],
-                            ),
-                          ),
-                          IconButton(
-                              icon: const Icon(Icons.delete_outline,
-                                  color: Pallete.dangerColor),
-                              onPressed: () async {
-                                await _progressRepo.deleteWeightEntry(entry.id);
-                                _loadData();
-                              }),
-                        ],
-                      ),
-                    );
-                  },
-                ),
-        ),
-      ],
-    );
-  }
-
-  Widget _buildStatsTab() {
-    final weeklyCals = (_stats?['weeklyCalories'] as num?)?.toDouble() ?? 0.0;
-    final monthlyCals = (_stats?['monthlyCalories'] as num?)?.toDouble() ?? 0.0;
-    final totalMeals = (_stats?['totalMeals'] as num?)?.toDouble() ?? 0.0;
-
-    return SingleChildScrollView(
-      padding: const EdgeInsets.all(20),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          const Text('Nutrition Stats',
-              style: TextStyle(
-                  color: Pallete.mainFontColor,
-                  fontWeight: FontWeight.bold,
-                  fontSize: 18)),
-          const SizedBox(height: 16),
-          _nutritionCard('Weekly', weeklyCals, Colors.orange),
-          const SizedBox(height: 12),
-          _nutritionCard('Monthly', monthlyCals, Colors.blue),
-          const SizedBox(height: 12),
-          _nutritionCard('Total Meals Logged', totalMeals, Colors.green),
-          const SizedBox(height: 24),
-          const Text('Achievements',
-              style: TextStyle(
-                  color: Pallete.mainFontColor,
-                  fontWeight: FontWeight.bold,
-                  fontSize: 18)),
-          const SizedBox(height: 16),
-          _achievementsGrid(),
-        ],
-      ),
-    );
-  }
-
-  Widget _nutritionCard(String label, double value, Color color) {
-    return Container(
-      padding: const EdgeInsets.all(16),
-      decoration: BoxDecoration(
-          color: Pallete.cardColor,
-          borderRadius: BorderRadius.circular(12),
-          border: Border.all(color: Pallete.borderColor)),
-      child: Row(
-        children: [
-          Container(
-            width: 40,
-            height: 40,
-            decoration: BoxDecoration(
-                color: color.withValues(alpha: 0.2),
-                borderRadius: BorderRadius.circular(10)),
-            child: Icon(Icons.local_fire_department, color: color, size: 20),
-          ),
-          const SizedBox(width: 16),
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(label,
-                    style: const TextStyle(
-                        color: Pallete.subFontColor, fontSize: 12)),
-                Text('${value.toInt()} kcal',
-                    style: const TextStyle(
-                        color: Pallete.mainFontColor,
-                        fontSize: 20,
-                        fontWeight: FontWeight.bold)),
-              ],
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-
-  Widget _achievementsGrid() {
-    final achievements = [
-      {
-        'icon': '🏆',
-        'title': 'First Workout',
-        'unlocked': _workoutCount >= 1 ? 1 : 0
-      },
-      {'icon': '🔥', 'title': '7 Day Streak', 'unlocked': _streak >= 7 ? 1 : 0},
-      {
-        'icon': '💪',
-        'title': '10 Workouts',
-        'unlocked': _workoutCount >= 10 ? 1 : 0
-      },
-      {
-        'icon': '🏃',
-        'title': '30 Day Streak',
-        'unlocked': _streak >= 30 ? 1 : 0
-      },
-      {
-        'icon': '🥗',
-        'title': 'First Meal Log',
-        'unlocked': ((_stats?['totalMeals'] as num?)?.toInt() ?? 0) >= 1 ? 1 : 0
-      },
-      {
-        'icon': '📊',
-        'title': 'Log 10 Weights',
-        'unlocked': _weightEntries.length >= 10 ? 1 : 0
-      },
-    ];
-
-    return Wrap(
-      spacing: 12,
-      runSpacing: 12,
-      children: achievements.map((a) {
-        final num unlockedNum = a['unlocked'] as num? ?? 0;
-        final bool unlocked = unlockedNum.toInt() == 1;
-        return Container(
-          width: (MediaQuery.of(context).size.width - 64) / 2,
-          padding: const EdgeInsets.all(16),
-          decoration: BoxDecoration(
-            color: unlocked
-                ? Pallete.successColor.withValues(alpha: 0.1)
-                : Pallete.cardColor,
-            borderRadius: BorderRadius.circular(12),
-            border: Border.all(
-                color: unlocked ? Pallete.successColor : Pallete.borderColor),
-          ),
-          child: Column(
-            children: [
-              Text(a['icon'] as String, style: const TextStyle(fontSize: 32)),
-              const SizedBox(height: 8),
-              Text(a['title'] as String,
-                  style: TextStyle(
-                      color: unlocked
-                          ? Pallete.successColor
-                          : Pallete.subFontColor,
-                      fontSize: 12,
-                      fontWeight: FontWeight.bold),
-                  textAlign: TextAlign.center),
-            ],
-          ),
-        );
-      }).toList(),
-    );
-  }
+  Widget build(BuildContext context) => BlocListener<AuthCubit, AuthState>(
+      listener: (_, __) => _accountChanged(),
+      child: AppThemeScope(child: Builder(builder: (context) {
+        final now = _now(), snapshot = _snapshot;
+        final data = snapshot == null
+            ? null
+            : ProgressViewData(snapshot: snapshot, period: _period, now: now);
+        return PopScope(
+            onPopInvokedWithResult: (didPop, _) {
+              if (didPop) {
+                _closed = true;
+                _request++;
+              }
+            },
+            child: Scaffold(
+                appBar: AppBar(title: const Text('Progress'), actions: [
+                  IconButton(
+                      tooltip: 'Refresh progress',
+                      onPressed: _loading ? null : _load,
+                      icon: const Icon(Icons.refresh)),
+                  IconButton(
+                      tooltip: 'Progress data information',
+                      onPressed: () => showDialog<void>(
+                          context: context,
+                          builder: (context) => AlertDialog(
+                                  title: const Text('Your recorded progress'),
+                                  content: const SingleChildScrollView(
+                                      child: Text(
+                                          'Only records belonging to your account appear here. Older weight records without ownership are preserved on this device, but are not assigned to you.\n\nWater remains shared device data and is excluded from personal progress. Rings require saved targets; workout and weight targets have not been set. Food calories are intake, not calories burned.')),
+                                  actions: [
+                                    TextButton(
+                                        onPressed: () => Navigator.pop(context),
+                                        child: const Text('Got it'))
+                                  ])),
+                      icon: const Icon(Icons.info_outline))
+                ]),
+                bottomNavigationBar: NavigationBar(
+                    selectedIndex: 3,
+                    labelBehavior: MediaQuery.textScalerOf(context).scale(12) >
+                            18
+                        ? NavigationDestinationLabelBehavior.onlyShowSelected
+                        : NavigationDestinationLabelBehavior.alwaysShow,
+                    onDestinationSelected: (index) {
+                      switch (index) {
+                        case 0:
+                          Navigator.of(context)
+                              .popUntil((route) => route.isFirst);
+                        case 1:
+                          _open(const WorkoutPage());
+                        case 2:
+                          _open(const MealPlannerPage());
+                      }
+                    },
+                    destinations: const [
+                      NavigationDestination(
+                          icon: Icon(Icons.home_outlined), label: 'Home'),
+                      NavigationDestination(
+                          icon: Icon(Icons.fitness_center), label: 'Workouts'),
+                      NavigationDestination(
+                          icon: Icon(Icons.restaurant_outlined),
+                          label: 'Nutrition'),
+                      NavigationDestination(
+                          icon: Icon(Icons.insights), label: 'Progress')
+                    ]),
+                body: SafeArea(
+                    top: false,
+                    bottom: false,
+                    child: RefreshIndicator(
+                        onRefresh: _load,
+                        child: SingleChildScrollView(
+                            physics: const AlwaysScrollableScrollPhysics(),
+                            padding: const EdgeInsets.all(AppSpacing.page),
+                            child: Center(
+                                child: ConstrainedBox(
+                                    constraints: const BoxConstraints(
+                                        maxWidth: AppLayout.contentWidth),
+                                    child: Column(
+                                        crossAxisAlignment:
+                                            CrossAxisAlignment.stretch,
+                                        children: [
+                                          if (_loading)
+                                            const Padding(
+                                                padding: EdgeInsets.symmetric(
+                                                    vertical: 32),
+                                                child: Column(children: [
+                                                  LinearProgressIndicator(
+                                                      semanticsLabel:
+                                                          'Loading progress'),
+                                                  SizedBox(height: 16),
+                                                  Text('Loading your journey…')
+                                                ]))
+                                          else if (_error != null) ...[
+                                            Text(_error!,
+                                                key: const Key(
+                                                    'progress-error')),
+                                            TextButton(
+                                                onPressed:
+                                                    _verifiedUser() == null
+                                                        ? null
+                                                        : _load,
+                                                child: const Text('Retry'))
+                                          ] else if (data != null) ...[
+                                            ProgressJourney(
+                                                summary: data.journeySummary,
+                                                period: _period.label),
+                                            if (snapshot!
+                                                .unavailable.isNotEmpty)
+                                              Padding(
+                                                  padding: const EdgeInsets
+                                                      .symmetric(vertical: 16),
+                                                  child: Semantics(
+                                                      liveRegion: true,
+                                                      child: Column(
+                                                          crossAxisAlignment:
+                                                              CrossAxisAlignment
+                                                                  .start,
+                                                          children: [
+                                                            Text(
+                                                                'Some progress data couldn’t load: ${snapshot.unavailable.map((e) => e.name).join(', ')}. Unavailable values are not shown as zero.',
+                                                                style: TextStyle(
+                                                                    color: Theme.of(
+                                                                            context)
+                                                                        .colorScheme
+                                                                        .error)),
+                                                            TextButton(
+                                                                onPressed:
+                                                                    _load,
+                                                                child:
+                                                                    const Text(
+                                                                        'Retry'))
+                                                          ]))),
+                                            const SizedBox(height: 16),
+                                            ProgressChart(
+                                                entries: data.weights,
+                                                period: _period,
+                                                now: now,
+                                                onPeriod: (period) => setState(
+                                                    () => _period = period),
+                                                unavailable: snapshot
+                                                    .unavailable
+                                                    .contains(
+                                                        ProgressSource.weights),
+                                                onLog: _editing
+                                                    ? null
+                                                    : () => _weight(context),
+                                                onEdit: _editing
+                                                    ? null
+                                                    : (entry) => _weight(
+                                                        context,
+                                                        entry: entry),
+                                                onDetails: () =>
+                                                    _details(context)),
+                                            const SizedBox(height: 16),
+                                            OutlinedButton.icon(
+                                                key: const Key(
+                                                    'progress-log-weight'),
+                                                onPressed: _editing
+                                                    ? null
+                                                    : () => _weight(context),
+                                                icon: const Icon(Icons.add),
+                                                label:
+                                                    const Text('Log weight')),
+                                            const SizedBox(height: 24),
+                                            Text('Key Progress',
+                                                style: Theme.of(context)
+                                                    .textTheme
+                                                    .headlineSmall),
+                                            const SizedBox(height: 8),
+                                            Text(
+                                                'Workouts: selected period · Nutrition: today',
+                                                style: Theme.of(context)
+                                                    .textTheme
+                                                    .bodySmall),
+                                            const SizedBox(height: 16),
+                                            ProgressMetrics(data: data),
+                                            const SizedBox(height: 24),
+                                            Text('Activity Timeline',
+                                                style: Theme.of(context)
+                                                    .textTheme
+                                                    .headlineSmall),
+                                            const SizedBox(height: 8),
+                                            Text(
+                                                '${DateFormat('d MMM y').format(_period.start(now))} – ${DateFormat('d MMM y').format(now)}',
+                                                style: Theme.of(context)
+                                                    .textTheme
+                                                    .bodySmall),
+                                            const SizedBox(height: 16),
+                                            ProgressTimeline(
+                                                events: data.timeline,
+                                                now: now,
+                                                onEdit: _editing
+                                                    ? null
+                                                    : (entry) => _weight(
+                                                        context,
+                                                        entry: entry)),
+                                          ],
+                                        ]))))))));
+      })));
 }
