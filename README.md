@@ -36,7 +36,7 @@ Cloud Firestore is a dependency and appears in model serializers; current fitnes
 | Nutrition | Meal generation, logging, summaries, and water tracking are implemented. Planner and circular Nutrition/Water trackers are redesigned and owner-approved. Meal logging validates values; water uses the labeled app default and confirmed daily totals. |
 | Food Scanner | Android-tested and owner-approved: embedded camera, gallery selection, explicit photo review/analysis, Gemini nutrition estimates, editing, and confirmed saving to Nutrition Tracker. Safe failures/retry and duplicate/stale-response guards have automated coverage. |
 | AI Coach | Redesigned and UI/UX-approved on Android: original sparkle header, selectable formatted replies, bounded temporary context, safe errors/Retry, and request/account/navigation guards. Automated reliability coverage; no saved conversation archive. |
-| Progress | Weight logging, charts, and activity summaries are implemented. Weight deletion and account data separation have known limitations. |
+| Progress | Design C timeline-style implementation approved for milestone finalization: dated interactive weight chart, owned weight logging/editing, real workout/meal history and goal-backed nutrition metrics. Unowned legacy weights remain stored but excluded; water ownership migration is deferred. |
 | Profile and Settings | Profile editing, BMI, nutrition targets, JSON export, and account controls are implemented; redesign and further verification are upcoming. |
 | Reminders | Immediate notifications and an enable preference exist; recurring daily scheduling is not implemented. |
 
@@ -52,7 +52,7 @@ Cloud Firestore is a dependency and appears in model serializers; current fitnes
 - [x] **Nutrition** — Planner, circular Tracker/Water, and validated meal logging redesigned and owner-approved; remaining device/live-service verification is tracked separately.
 - [x] **AI Coach** — Chat redesigned and UI/UX-approved on Android; merged into `main`. See [design, validation and security notes](docs/ui-ux/ai-coach-redesign.md).
 - [x] **Food Scanner** — dashboard, camera and results redesigned; implementation/UI/UX tested and owner-approved on Android. See [design and validation](docs/ui-ux/food-scanner-redesign.md).
-- [ ] **Progress** — upcoming.
+- [x] **Progress** — Design C timeline/chart redesign with account-owned weight logging/editing; owner-approved for milestone finalization, with remaining device-regression checks documented. See [design, data compatibility and checklist](docs/ui-ux/progress-tracking-redesign.md).
 - [ ] **Profile and Settings** — upcoming.
 
 Checked entries indicate implemented, owner-approved UI rather than completion of the entire feature. Reviewed screens share a centralized Midnight Navy + Electric Blue Material 3 design system. Other routes retain their earlier styling until their own milestone.
@@ -107,7 +107,23 @@ Food Scanner provides a cohesive Midnight Navy + Electric Blue flow: a minimalis
 
 **Client-side key risk:** Food analysis uses the existing direct mobile-to-Gemini architecture. The bundled API key can be extracted even though local credentials are git-ignored and errors are sanitized. A server-side gateway and stronger credential management remain future work.
 
-The milestone has 63 scanner tests; the full suite has 305 passing tests. Mock camera/HTTP/storage coverage is distinct from the owner's Android review. See the [case study, validation and Android checklist](docs/ui-ux/food-scanner-redesign.md) and [repair root causes](docs/ui-ux/food-scanner-repairs.md).
+The scanner milestone added 63 tests; the full suite passed 305 tests at that milestone. Mock camera/HTTP/storage coverage is distinct from the owner's Android review. See the [case study, validation and Android checklist](docs/ui-ux/food-scanner-redesign.md) and [repair root causes](docs/ui-ux/food-scanner-repairs.md).
+
+## Progress Tracking
+
+The Design C interface combines an original mountain **Your Journey** banner, an interactive electric-blue weight chart, compact metrics and a dated activity timeline. The owner approved the completed implementation for GitHub finalization; this does not establish exhaustive real-device or accessibility verification.
+
+- **Interactive weight chart:** 7D/30D use local calendar days; 3M/1Y use calendar-month/year lookbacks. Actual measurement timestamps determine point spacing. Tap points, use previous/next controls, or open **See details** to inspect dated values. Empty/single-point periods do not invent trends, and summaries do not assume weight loss is the goal.
+- **Log and edit weight:** Save a measurement date, value and optional note, then edit the same record or explicitly confirm its deletion. New records retain a UUID and authenticated owner. Mutations recheck the current account and stored ownership; edits retain ID, owner, creation metadata and unknown fields. Pending actions and stable draft IDs protect against duplicate/uncertain saves.
+- **Account-scoped history:** Progress, Home and Profile share an owner-filtered weight reader. Existing records without ownership remain stored unchanged but are excluded from personal summaries; none are automatically assigned, deleted or migrated. Only newly saved records receive the approved additional metadata in the existing local list.
+- **Activity timeline:** Show actual owned weight logs, completed workouts, logged meals and a first-recorded-weight milestone. Planned workout duration is labeled as a plan; no calorie-burn estimate or invented achievement is added.
+- **Meaningful metrics:** Workouts cover the selected period. Today's nutrition/protein rings require actual logged meals and valid account-owned saved targets. There is no invented workout-session or target-weight goal. Protein is a conditional fourth metric.
+
+**Limits:** Personal water history remains unavailable because water totals are shared per device; ownership migration is deferred, and Nutrition/Home water behavior is unchanged. Legacy weights have no automatic claim/migration flow. Other profile, workout and export paths retain documented account-sharing limitations. Records are local rather than cloud-synchronized. Real-device storage/restart, account-transition, chart-gesture and TalkBack regression checks remain separate from automated coverage.
+
+Publication validation on 6 November 2026: **350 tests passed**, including **45 Progress tests**; formatting and the Android debug build passed. Analysis retains **7 existing diagnostics** (4 warnings, 3 infos), with no errors or new Progress diagnostics.
+
+See the [Progress case study, validation and compatibility notes](docs/ui-ux/progress-tracking-redesign.md) and [audit/repair root causes](docs/ui-ux/progress-tracking-audit.md). No Progress screenshots or specific device-test outcomes are claimed without evidence.
 
 ## Current Development
 
@@ -127,14 +143,14 @@ Current Midnight screenshots have not been added. Place actual Android captures 
 
 ## Known Issues
 
-- Local fitness/profile data is not consistently isolated per account. Nutrition meal reads now filter existing owner IDs; water and raw Progress statistics still have shared-data limitations. A separate ownership/migration plan is needed; no existing records are migrated or deleted.
-- Weight records lack stable IDs for reliable individual deletion; the Settings clear-weight action also uses a legacy storage path.
+- Local fitness/profile data is not consistently isolated per account. Nutrition meal reads now filter existing owner IDs; weight reads now filter owners too; water, profile storage and some workout/export paths still have shared-data limitations. A separate ownership/migration plan is needed; no existing records are migrated or deleted.
+- New weight records have owner/UUID metadata for reliable editing/deletion. Existing unowned weights are retained without reassignment and excluded from personal summaries. The Settings clear-weight action still uses a legacy storage path.
 - Quote failures can still use predefined fallbacks. Workout/meal generation, AI Coach Chat and Food Scanner report failures explicitly; the quote fallback remains separate.
 - Food-image nutrition is an estimate, not independently verified data. No saved photo/scan archive is implemented; the Gemini key remains extractable from the client until a backend gateway is introduced.
 - Recurring daily reminders are not implemented.
 - The registration name is collected but not persisted by the authentication repository.
 - Workout history retains the existing latest-50 limit. Live Gemini output, real app-restart persistence, TalkBack, and full authentication flows need further device verification.
-- Full-project analysis reports existing diagnostics in Profile, Progress, Settings, and the Progress repository. Current Nutrition checks are recorded in the [approved Nutrition milestone](docs/ui-ux/approved-nutrition-milestone.md); the previous approved milestone has a separate [release review](docs/ui-ux/approved-midnight-milestone.md).
+- Full-project analysis reports seven existing diagnostics in Profile and Settings; the Progress redesign introduces no new diagnostics. Current Nutrition checks are recorded in the [approved Nutrition milestone](docs/ui-ux/approved-nutrition-milestone.md); the previous approved milestone has a separate [release review](docs/ui-ux/approved-midnight-milestone.md).
 
 The dashboard statistics-source mismatch and workout completion UUID bug have targeted fixes and regression coverage. Their root causes and scope are documented separately from visual decisions.
 

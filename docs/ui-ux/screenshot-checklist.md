@@ -87,3 +87,21 @@ Reference: owner-supplied `Allen Food Scanner UI Concepts.png`; do not use it as
 - [ ] Background/resume, Back during capture/analysis and account switch; old results never reappear.
 
 Mocked widget previews/fixtures are automated tests, not live Gemini or native-camera evidence.
+
+
+## Progress Tracking — implementation approved; captures pending
+
+Use the owner's `Dark Navy Fitness Progress Dashboard.png` as a concept reference only. The owner approved milestone finalization on 6 November 2026. No detailed device-test results or screenshot evidence were supplied, so the unchecked items remain capture/regression reminders.
+
+- [ ] Original tabs/chart and legacy weight flow, labeled as before screenshots.
+- [ ] Your Journey mountain banner with a real recorded summary.
+- [ ] Dated chart with all four filters, point inspection and accessible details.
+- [ ] Empty period and single-point states without invented measurements.
+- [ ] Key metrics with actual targets; unavailable water and missing-goal explanations.
+- [ ] Genuine completion, weight and meal timeline events with dates.
+- [ ] Keyboard-safe logging/editing, validation, explicit deletion and saved refresh.
+- [ ] Legacy/unowned data remains preserved; owned data differs between accounts.
+- [ ] Loading, partial error, retry, stale response and account-switch behavior.
+- [ ] Small screen, landscape, 200% text, safe areas and TalkBack.
+
+Capture genuine Android renders after installation, record the device/build and remove private notes/account information. Temporary test-fixture renders do not demonstrate native storage, live Firebase behavior or real-device appearance.
