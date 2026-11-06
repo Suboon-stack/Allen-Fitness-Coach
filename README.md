@@ -74,8 +74,6 @@ To validate locally, run `flutter analyze`, `flutter test`, and `flutter build a
 
 **Active development — UI/UX and functionality improvements.** The redesigned feature milestones are merged into `main`; live-service, device, and accessibility regression testing remains ongoing.
 
-- Gemini suggestions and photo nutrition are estimates. Client-side API keys remain extractable; a protected backend is a future security improvement.
-- Fitness data and exports are local and not additionally encrypted or cloud-synchronized. Exports stay in app-private storage; external sharing is not implemented.
-- Account isolation is incomplete: water is shared device data, and older workout paths retain ownership limitations. Unowned legacy profiles/weights are preserved but excluded from personal summaries; exports omit foreign/unowned records.
-- Account deletion removes Firebase access, not local fitness records. The legacy cache-clear action does not clear current weight history.
+- Gemini suggestions and photo nutrition are estimates and a protected backend is a future security improvement.
+- Fitness data and exports are local and not additionally encrypted or cloud-synchronized. Exports stay in app-private storage.
 - Chat history is temporary. Notifications support Android permission/status checks and an explicit test; daily reminders are not scheduled. Theme, units, and language are currently fixed.
